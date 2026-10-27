@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <!-- Stylesheet referred to in css folder -->
+        <link rel="stylesheet" type="text/css" href="css/stylesheet.css">
+        <title>About Kyele's Website</title>
+        <!-- Theme toggle JS. Defer is used to apply the theme after the page has been parsed -->
+         <script src="js/theme.js" defer></script>
+    </head>
+
+    <!-- 'page' class is the grid container -->
+    <body>
+        <div class="page">
+
+            <!-- Row 1: Main page heading spanning width of grid -->
+            <header class="site-header">
+                <h1>About This Project</h1>
+                <!-- Dark mode button -->
+                <button id="theme_toggler" type="button" aria-label="Toggle Dark Mode">Toggle Dark Mode</button>
+            </header>   
+
+            <!--Row 2: Navigation bar at top of page containing in-page anchor links for quick navigation to particular sections of the About page-->
+            <nav class="site-nav">
+                <ul>
+                    <li><a href="#about-me">About Me</a></li>
+                    <li><a href="#the-project">The Project</a></li>
+                    <li><a href="#contact">Contact</a></li>
+                </ul>
+            </nav>
+
+            <!-- Row 3: Larger image beneath navigation bar -->
+            <figure class="site-banner">
+                <img src="images/cinema.jpg" alt="Cinema site banner.">
+            </figure>
+
+            <!-- Row 4: Main page content split into sections with unique id's for navigation-->
+            <main class="site-content">
+
+                <!-- Target for 'About Me' nagivation link -->
+                <section id="about-me">
+                    <h2>Kyele Duggan</h2>
+                    <p>
+                        I am an avid believer that watching a movie in a cinema surrounded by dozens of other people is an experience that cannot be easily replicated anywhere else.
+                        This is of course true for new releases but especially true for rereleases. The feeling of reliving a cherished experience in this atmosphere, or getting to
+                        experience these events for the first time is one I hope anyone can find with maximum ease.
+                    </p>
+                </section>
+
+                <!-- Target for 'The Project' nagivation link -->
+                <section id="the-project">
+                    <h2>The Project</h2>
+                    <p>
+                        In pursuit of making this aforementioned experience easier to find, I've decided to build a website dedicated to tracking theatrical rereleases and special editions 
+                        that would fly under the radar of most users. Simply going to the main page of any exhibitor's website, you would understandably be met with advertisements for the 
+                        hottest, new movies in theaters that week, or a big new release coming up on the weekend. Without going out of their way to look for it, a user may have no idea
+                        that one of their favorite movies is showing on the big screen for the first time in years right then! Alternatively, a movie they have been meaning to getting 
+                        around to watching could be rereleasing in a matter of weeks, making for the perfect occasion to get that first watch in. To aid fans in making these showings
+                        simple to find, my website provides information for all upcoming and ongoing rereleases and special edition showings in theaters, tailored to the location and
+                        specified interests of the user.
+                    </p>
+                </section>
+
+                <!-- Target for 'Contact' nagivation link -->
+                <section id="contact">
+                    <h2>Contact</h2>
+                    <!-- Link to github profile for contact-->
+                    <a href="https://github.com/kduggan210">Github</a>
+                </section>
+
+            </main>
+
+            <!-- Row 5: Footer with smaller temporary site logo centered at bottom of the page-->
+            <footer class="site-footer">
+                <img src="images/templogo.png" alt="Website logo.">
+            </footer>
+
+        </div>
+    </body>
+</html>

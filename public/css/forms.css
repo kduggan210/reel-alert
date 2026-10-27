@@ -1,0 +1,78 @@
+/* These pages have no banner row, so the page grid has one fewer track */
+.auth-page {
+    grid-template-rows: auto auto 1fr auto;
+}
+
+.auth-page .site-content {
+    grid-row: 3 / 4;
+}
+
+.auth-page .site-footer {
+    grid-row: 4 / 5;
+}
+
+/* Form is a single column of fields with a capped width */
+.auth-form {
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    margin-bottom: 1.5rem;
+}
+
+.form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.form-field label {
+    color: var(--text-color);
+    font-size: 1.05rem;
+}
+
+/* Inputs share the toggle button's border so the controls feel related */
+.form-field input {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    background-color: transparent;
+    color: var(--text-color);
+    border: 2px solid var(--button-border);
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 1rem;
+}
+
+.form-field input:focus {
+    outline: 2px solid var(--link-hover-color);
+    outline-offset: 2px;
+}
+
+/* Keeps browser-drawn parts of inputs (autofill, date pickers, etc.) dark in dark mode */
+body.dark_mode .form-field input {
+    color-scheme: dark;
+}
+
+/* Submit button matches the theme toggle button */
+.form-submit {
+    align-self: flex-start;
+    background-color: var(--button-bg);
+    color: var(--button-text);
+    border: 2px solid var(--button-border);
+    border-radius: 6px;
+    padding: 0.5rem 1.25rem;
+    font-family: inherit;
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+.form-submit:hover {
+    opacity: 0.8;
+}
+
+/* Result messages sent back by the server (success / error) */
+.message {
+    padding-left: 1rem;
+    border-left: 4px solid var(--heading-color);
+    font-size: 1.1rem;
+}

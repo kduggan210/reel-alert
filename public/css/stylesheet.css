@@ -1,0 +1,183 @@
+/* Default light theme colors */
+:root {
+    --body-bg: #EEF4ED;
+    --heading-color: #134074;
+    --text-color: #1F3550;
+    --link-color: #134074;
+    --link-hover-color: #5C7FA3;
+    --button-bg: transparent;
+    --button-text: #134074;
+    --button-border: #134074;
+}
+
+/* Dark mode theme colors */
+body.dark_mode {
+     --body-bg: #0A0A0A;
+    --heading-color: #6C8EAD;
+    --text-color: #D4D4D4;
+    --link-color: #6C8EAD;
+    --link-hover-color: #FFFFFF;
+    --button-bg: #6C8EAD;
+    --button-text: #0A0A0A;
+    --button-border: #6C8EAD;
+}
+
+/* Reset box model for predictable behavior of widths */
+* {
+    box-sizing: border-box;
+}
+
+/* Base page styling with font applied to the entire site */
+body {
+    background-color: var(--body-bg);
+    font-family: Georgia, serif;
+    margin: 0;
+    scroll-behavior: smooth;  /* animated jump when anchor is clicked on page */
+    transition: background-color 0.3s ease; /* fade applies on theme change */
+}
+
+/* Added spacing between top of viewport and headings*/
+section {
+    scroll-margin-top: 1.5rem;
+}
+
+/* Unique heading color */
+h1, h2 {
+    color: var(--heading-color)
+}
+
+/* Name subheading is slightly smaller than page heading */ 
+h2{
+    font-size:x-large
+}
+
+/* Unique color for text of paragraphs */
+p {
+    color: var(--text-color);
+    line-height: 1.5;
+}
+
+/* Links are underlined and match heading color */
+a {
+    color: var(--link-color);
+    text-decoration: underline;
+}
+
+/* Links are changed to white when hovered over */
+a:hover {
+    color: var(--link-hover-color);
+}
+
+/* Container for page layout with a single vertical column and 5 row tracks stacked on top of each other */
+.page {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto auto 1fr auto;
+    gap: 1rem;
+    min-height: 100vh;
+    max-width: 1100px;
+    margin: 0 auto;
+}
+
+/* First row track is header occupying grid line 1 to 2 */
+.site-header {
+    grid-column: 1 / 2;
+    grid-row: 1 / 2;
+    padding: 1.5rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+/* Removes default browser margin for h1 for predictability in padding*/
+.site-header h1 {
+    margin: 0;
+}
+
+/* Button to toggle theme matching both themes */
+#theme_toggler {
+    background-color: var(--button-bg);
+    color: var(--button-text);
+    border: 2px solid var(--button-border);
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-family: inherit;
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+/* Slight variation when hovering over toggle button d*/
+#theme_toggler:hover {
+    opacity: 0.8;
+}
+
+/* Second row track is navigation bar occupying grid line 2 to 3 */
+.site-nav {
+    grid-column: 1 / 2;
+    grid-row: 2 / 3;
+    padding: 1rem 2rem;
+}
+
+/* Navigation list is formatted horizontally without bullets rather than default vertical orientation */
+.site-nav ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    gap: 1.5rem;
+}
+
+/* Specified font size for nav bar links */
+.site-nav a {
+    font-size: 1.2rem;
+}
+
+/* Third row track is the banner image beneath the nav bar, with padding to align this row to the left with other rows */
+.site-banner {
+    grid-column: 1 / 2;
+    grid-row: 3 / 4;
+    margin: 0;
+    padding: 1.2rem 2rem 0;
+}
+
+/* Overriden image size for larger banner image, but capped width for formatting */
+.site-banner img {
+    width: 100%;
+    max-width: 650px;
+    height: auto;
+    display: block;
+}
+
+/* Fourth row is the main content consisting of 3 sections, with padding for alignment */
+.site-content {
+    grid-column: 1 / 2;
+    grid-row: 4 / 5;
+    padding: 2rem 2rem;
+}
+
+/* Paragraph width capped at 65 characters per line for improved readability and formatting */
+.site-content p {
+    max-width: 65ch;
+}
+
+/* Added space between sections to recognize them as distinct blocks */
+.site-content section + section {
+    margin-top: 2rem;
+}
+
+/* Fifth row is the footer consisting of a centered site logo at the bottom of the page */
+.site-footer{
+    grid-column: 1 / 2;
+    grid-row: 5 / 6;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 1.5rem  0;
+}
+
+/* Default image size allowing for small logo at bottom of page */
+img {
+    width: 80px;
+    height: auto;
+}

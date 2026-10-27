@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <!-- Shared site styles, then the form-specific styles -->
+        <!-- forms.css loads second so it can override the page grid for pages without a banner -->
+        <link rel="stylesheet" type="text/css" href="css/stylesheet.css">
+        <link rel="stylesheet" type="text/css" href="css/forms.css">
+        <title>Register</title>
+        <!-- Theme toggle JS. Defer applies the theme after the page has been parsed -->
+        <script src="js/theme.js" defer></script>
+    </head>
+
+    <body>
+        <!-- 'page' is the grid container; 'auth-page' adjusts it for pages without a banner -->
+        <div class="page auth-page">
+
+            <!-- Row 1: Page heading on the left, dark mode button on the right -->
+            <header class="site-header">
+                <h1>Register</h1>
+                <button id="theme_toggler" type="button" aria-label="Toggle Dark Mode">Toggle Dark Mode</button>
+            </header>
+
+            <!-- Row 2: Links to the other pages on the site -->
+            <nav class="site-nav">
+                <ul>
+                    <li><a href="about.html">About</a></li>
+                    <li><a href="register.html">Register</a></li>
+                    <li><a href="login.html">Login</a></li>
+                </ul>
+            </nav>
+
+            <!-- Row 3: Main content, which here is just the registration form -->
+            <main class="site-content">
+                <!-- action="/register" sends the form data to the /register route in main.js.
+                method="POST" puts the data in the request body instead of the URL -->
+                <form class="auth-form" action="/register" method="POST">
+                    <!-- Each field is a label plus an input. 'for' must match the input's 'id' -->
+                    <div class="form-field">
+                        <label for="username">Username</label>
+                        <!-- 'name' is the key main.js reads: req.body.username -->
+                        <input type="text" name="username" id="username" maxlength="50" autocomplete="username" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="email">E-mail</label>
+                        <!-- type="email" makes the browser check for a valid e-mail format -->
+                        <input type="email" name="email" id="email" maxlength="100" autocomplete="email" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="password">Password</label>
+                        <!-- type="password" hides the characters as they are typed. 
+                        autocomplete="current-password" tells password managers to fill in a saved password. -->
+                        <input type="password" name="password" id="password" autocomplete="new-password" required>
+                    </div>
+                    <!-- Sends the form. The server replies with a success or error page. -->
+                    <button type="submit" class="form-submit">Register</button>
+                </form>
+                <!-- Link for people who already have an account -->
+                <p>Already registered? <a href="login.html">Login</a></p>
+            </main>
+
+            <!-- Row 4: Footer with the site logo centered at the bottom of the page -->
+            <footer class="site-footer">
+                <img src="images/templogo.png" alt="Website logo.">
+            </footer>
+
+        </div>
+    </body>
+</html>
