@@ -8,8 +8,15 @@
          <script src="js/theme.js" defer></script>
     </head>
 
-    <!-- 'page' class is the grid container -->
     <body>
+        <!-- Applies the saved theme before first paint to avoid a flash -->
+        <script>
+            try {
+                var savedTheme = localStorage.getItem('website_theme');
+                if (savedTheme) document.body.classList.add(savedTheme);
+            } catch (e) {}
+        </script>
+        <!-- 'page' class is the grid container -->
         <div class="page">
 
             <!-- Row 1: Main page heading spanning width of grid -->
@@ -19,12 +26,15 @@
                 <button id="theme_toggler" type="button" aria-label="Toggle Dark Mode">Toggle Dark Mode</button>
             </header>   
 
-            <!--Row 2: Navigation bar at top of page containing in-page anchor links for quick navigation to particular sections of the About page-->
+            <!--Row 2: Navigation bar at top of the page -->
             <nav class="site-nav">
                 <ul>
                     <li><a href="#about-me">About Me</a></li>
                     <li><a href="#the-project">The Project</a></li>
                     <li><a href="#contact">Contact</a></li>
+                    <li><a href="register.html">Register</a></li>
+                    <li><a href="login.html">Login</a></li>
+                    <li><a href="/profile">Profile</a></li>
                 </ul>
             </nav>
 
@@ -36,7 +46,7 @@
             <!-- Row 4: Main page content split into sections with unique id's for navigation-->
             <main class="site-content">
 
-                <!-- Target for 'About Me' nagivation link -->
+                <!-- Target for 'About Me' navigation link -->
                 <section id="about-me">
                     <h2>Kyele Duggan</h2>
                     <p>
@@ -46,7 +56,7 @@
                     </p>
                 </section>
 
-                <!-- Target for 'The Project' nagivation link -->
+                <!-- Target for 'The Project' navigation link -->
                 <section id="the-project">
                     <h2>The Project</h2>
                     <p>
@@ -60,7 +70,7 @@
                     </p>
                 </section>
 
-                <!-- Target for 'Contact' nagivation link -->
+                <!-- Target for 'Contact' navigation link -->
                 <section id="contact">
                     <h2>Contact</h2>
                     <!-- Link to github profile for contact-->

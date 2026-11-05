@@ -12,6 +12,13 @@
     </head>
 
     <body>
+        <!-- Applies the saved theme before first paint to avoid a flash -->
+        <script>
+            try {
+                var savedTheme = localStorage.getItem('website_theme');
+                if (savedTheme) document.body.classList.add(savedTheme);
+            } catch (e) {}
+        </script>
         <!-- 'page' is the grid container; 'auth-page' adjusts it for pages without a banner -->
         <div class="page auth-page">
 
@@ -27,10 +34,11 @@
                     <li><a href="about.html">About</a></li>
                     <li><a href="register.html">Register</a></li>
                     <li><a href="login.html">Login</a></li>
+                    <li><a href="/profile">Profile</a></li>
                 </ul>
             </nav>
 
-            <!-- Row 3: Main content, which here is just the registration form -->
+            <!-- Row 3: Main content, which here is just the login form -->
             <main class="site-content">
                 <!-- action="/login" sends the form data to the /login route in main.js.
                 method="POST" puts the data in the request body instead of the URL -->
