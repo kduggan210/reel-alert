@@ -1,35 +1,29 @@
-// Grabs toggle button from html file
-let theme_toggler = document.querySelector('#theme_toggler');
+// Dark mode toggle. This file handles the button, saving the choice, and keeping open tabs in sync.
 
-// Applies saved theme found in localStorage to the page
-function retrieve_theme() {
-    let theme = localStorage.getItem('website_theme');
+const root = document.documentElement;            // the <html> element holds the theme class
+const toggler = document.getElementById('theme_toggler');
 
-    // Restores previously used theme if one was selected by user on last visit, does nothing otherwise
-    if (theme != null) {
-        // Clear old theme classes
-        document.body.classList.remove('default', 'dark_mode');
-        // Apply correct theme
-        document.body.classList.add(theme);
-    }
+// Shows the current state on the button for screen readers and sighted users
+function syncButton() {
+    const dark = root.classList.contains('dark_mode');
+    toggler.setAttribute('aria-pressed', String(dark));
+    toggler.textContent = dark ? 'Light mode' : 'Dark mode';
 }
 
-// Switch themes on a button click
-theme_toggler.addEventListener('click', function () {
-    document.body.classList.toggle('dark_mode');
+// Click: flip the theme and remember it 
+toggler.addEventListener('click', function () {
+    root.classList.toggle('dark_mode');
+    try {
+        localStorage.setItem('website_theme', root.classList.contains('dark_mode') ? 'dark_mode' : 'default');
+    } catch (e) {}
+    syncButton();
+});
 
-    // Save theme so it is restored on subsequent visits 
-    if (document.body.classList.contains('dark_mode')) {
-        localStorage.setItem('website_theme', 'dark_mode');
-    } else {
-        localStorage.setItem('website_theme', 'default');
-    }
- });
+// Changed themes in other tabs are copied here
+window.addEventListener('storage', function (e) {
+    if (e.key !== 'website_theme') return;
+    root.classList.toggle('dark_mode', e.newValue === 'dark_mode');
+    syncButton();
+});
 
- // Apply saved theme as page loads
- retrieve_theme();
-
- // Applies theme changes across multiple open tabs
- window.addEventListener('storage', function () {
-    retrieve_theme();
- }, false);
+syncButton();

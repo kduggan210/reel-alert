@@ -1,36 +1,39 @@
-require("dotenv").config();                     // loads .env values into process.env
-const express = require("express");
-const session = require("express-session");     // stores data per visitor on the server between requests
-const cookieParser = require("cookie-parser");  // reads cookies
-const bcrypt = require("bcryptjs");             // hashes and checks passwords
-const mysql = require("mysql2");
+// main.js - Reel Alert server.
+// shared layout, login-aware navigation, registration, login (sessions) and logout.
 
-// Session cookie is signed with a secret so it can't be forged. 
+require("dotenv").config();               // loads .env values into process.env
+const express = require("express");
+const session = require("express-session");
+const cookieParser = require("cookie-parser");
+const bcrypt = require("bcryptjs");
+const mysql = require("mysql2");
+const views = require("./views");
+
+// The session cookie is signed with a secret; stop early with a clear message if it's missing
 if (!process.env.SESSION_SECRET) {
-  console.log("Missing SESSION_SECRET in .env. Add one and restart.");
+  console.log("Missing SESSION_SECRET in .env. Add one and restart (see .env.example).");
   process.exit(1);
 }
 
 const app = express();
-// Allows form data sent by register and login forms to be read
-app.use(express.urlencoded({ extended: true }));
-// Serves everything in public/ folder
-app.use(express.static("public"));
+app.use(express.urlencoded({ extended: true })); // read form data into req.body
+app.use(express.static("public"));               // css/ and js/ files
 app.use(cookieParser());
 
+// Sessions: req.session.user is kept on the server; the browser only holds a random ID cookie.
+// No maxAge is set, so it is a session cookie: it lasts until the browser is closed or the user logs out.
 app.use(session({
-  secret: process.env.SESSION_SECRET, // signs the session ID cookie
-  resave: false,                      // don't resave a session that hasn't changed
-  saveUninitialized: false,           // don't create sessions for visitors hwo never log in
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
   cookie: {
-    maxAge: 60000 * 60,               // cookie expires after 1 hour
-    httpOnly: true,                   // JavaScript in the page can't read the cookie
-    sameSite: "lax",                  // browser won't send the cookie on most cross-site requests
-    secure: false                     // set to true once the site is served over HTTPS
+    httpOnly: true,   // page JavaScript can't read the cookie
+    sameSite: "lax",  // not sent with most cross-site requests
+    secure: false     // set to true once the site is served over HTTPS
   }
 }));
 
-// Connection details are stored in .env for security
+// Database connection (values come from .env so the password isn't in the code)
 const conn = mysql.createConnection({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
@@ -38,190 +41,146 @@ const conn = mysql.createConnection({
   database: process.env.DB_NAME,
   port: process.env.DB_PORT
 });
-
 conn.connect(function (err) {
-  if (err)
-    console.log("Couldnt connect to MySQL", err);
-  else
-    console.log("Database connection established");
+  if (err) console.log("Couldnt connect to MySQL", err);
+  else console.log("Database connection established");
 });
 
-const SALT_ROUNDS = 12; // bcrypt stores the salt inside the hash, so no salt column is needed
+const SALT_ROUNDS = 12; // bcrypt cost: higher is slower to guess; the salt is stored inside the hash
 
-// Turns characters that have special meaning in HTML into harmless text. Used on user typed inputs before being put in a page
-function escapeHtml(text) {
-  return String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+// ---------- Access control ----------
+// Logged-out visitors are sent to the login page instead.
+function requireLogin(req, res, next) {
+  if (req.session.user) return next();
+  res.redirect("/login?need=1");
 }
 
-// Wraps a message in the same layout as the static pages so every response matches the site.
-// 'message' is passed as fixed text or user data run through escapeHtml() and 'links' is a list following: [{href: "/login.html", text: "Login" }]
-function messagePage(title, message, links) {
-  const linkHtml = links
-    .map(function (l) { return `<a href="${l.href}">${l.text}</a>`; })
-    .join(" &nbsp;|&nbsp; ");
- 
-  return `<!DOCTYPE html>
-<html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <link rel="stylesheet" type="text/css" href="/css/stylesheet.css">
-        <link rel="stylesheet" type="text/css" href="/css/forms.css">
-        <title>${title}</title>
-        <script src="/js/theme.js" defer></script>
-    </head>
-    <body>
-        <script>
-            try {
-                var savedTheme = localStorage.getItem('website_theme');
-                if (savedTheme) document.body.classList.add(savedTheme);
-            } catch (e) {}
-        </script>
-        <div class="page auth-page">
-            <header class="site-header">
-                <h1>${title}</h1>
-                <button id="theme_toggler" type="button" aria-label="Toggle Dark Mode">Toggle Dark Mode</button>
-            </header>
-            <nav class="site-nav">
-                <ul>
-                    <li><a href="/about.html">About</a></li>
-                    <li><a href="/register.html">Register</a></li>
-                    <li><a href="/login.html">Login</a></li>
-                    <li><a href="/profile">Profile</a></li>
-                </ul>
-            </nav>
-            <main class="site-content">
-                <p class="message">${message}</p>
-                <p>${linkHtml}</p>
-            </main>
-            <footer class="site-footer">
-                <img src="/images/templogo.png" alt="Website logo.">
-            </footer>
-        </div>
-    </body>
-</html>`;
-}
+// ---------- Public pages ----------
+app.get("/", function (req, res) { res.send(views.homePage(req.session.user)); });
+app.get("/about", function (req, res) { res.send(views.aboutPage(req.session.user)); });
 
+// Login page. The ?need and ?registered flags only select fixed messages, never user text.
+app.get("/login", function (req, res) {
+  if (req.session.user) return res.redirect("/");
+  let notice;
+  if (req.query.registered) notice = "Account created. You can log in now.";
+  if (req.query.need) notice = "Please log in to see that page.";
+  if (req.query.loggedout) notice = "You have been logged out.";
+  res.send(views.loginPage(undefined, { notice }));
+});
 
-// Receives the register form, hashes the password, and saves the new user
+app.get("/register", function (req, res) {
+  if (req.session.user) return res.redirect("/");
+  res.send(views.registerPage(undefined));
+});
+
+// ---------- Register ----------
 app.post("/register", async function (req, res) {
   const body = req.body || {};
   const username = (body.username || "").trim();
   const email = (body.email || "").trim();
   const plainPass = body.password || "";
- 
-  // Basic checks before touching the database
+  const keep = { username, email };   // put back in the form if something is wrong
+
   if (!username || !email || !plainPass) {
-    return res.send(messagePage("Register", "All fields are required.", [{ href: "/register.html", text: "Back to register" }]));
+    return res.send(views.registerPage(undefined, { ...keep, error: "All fields are required." }));
   }
   if (username.length > 50 || email.length > 100) {
-    return res.send(messagePage("Register", "Username (max 50) or e-mail (max 100) is too long.", [{ href: "/register.html", text: "Back to register" }]));
+    return res.send(views.registerPage(undefined, { ...keep, error: "Username (max 50) or e-mail (max 100) is too long." }));
   }
- 
+  if (plainPass.length < 8) {
+    return res.send(views.registerPage(undefined, { ...keep, error: "Password must be at least 8 characters." }));
+  }
+
   try {
-    // Store password hash
-    const hash = await bcrypt.hash(plainPass, SALT_ROUNDS);
- 
-    // ? placeholders keep user input out of the SQL text, which prevents SQL injection
+    const hash = await bcrypt.hash(plainPass, SALT_ROUNDS);   // never store the plain password
+    // ? placeholders keep user input out of the SQL text (prevents SQL injection)
     const sql = "insert into users (username, email, password_hash) values (?,?,?)";
     conn.query(sql, [username, email, hash], function (err) {
       if (err) {
-        // UNIQUE keys on username and email make MySQL reject duplicates 
+        // UNIQUE keys on username and e-mail make MySQL reject duplicates with this code
         if (err.code === "ER_DUP_ENTRY")
-          return res.send(messagePage("Register", "That username or e-mail is already taken.", [{ href: "/register.html", text: "Try again" }]));
+          return res.send(views.registerPage(undefined, { ...keep, error: "That username or e-mail is already taken." }));
         console.log("Error inserting user", err);
-        return res.send(messagePage("Register", "Something went wrong. Please try again.", [{ href: "/register.html", text: "Back to register" }]));
+        return res.send(views.registerPage(undefined, { ...keep, error: "Something went wrong. Please try again." }));
       }
-      res.send(messagePage("Register", "You have successfully registered.", [{ href: "/login.html", text: "Login" }]));
+      res.redirect("/login?registered=1");
     });
   } catch (e) {
     console.log("Hashing error", e);
-    res.send(messagePage("Register", "Something went wrong. Please try again.", [{ href: "/register.html", text: "Back to register" }]));
+    res.send(views.registerPage(undefined, { ...keep, error: "Something went wrong. Please try again." }));
   }
 });
 
-
-// Checks the credentials and, if they are correct, stores the user in the session.
+// ---------- Login ----------
 app.post("/login", function (req, res) {
   const body = req.body || {};
   const username = (body.username || "").trim();
   const plainPass = body.password || "";
- 
+
   const sql = "select user_id, username, password_hash from users where username = ?";
   conn.query(sql, [username], async function (err, rows) {
     if (err) {
       console.log("Login query error", err);
-      return res.send(messagePage("Login", "Something went wrong. Please try again.", [{ href: "/login.html", text: "Back to login" }]));
+      return res.send(views.loginPage(undefined, { username, error: "Something went wrong. Please try again." }));
     }
- 
-    // Compare the typed password with the stored hash. An unknown username and a wrong password both end up as ok = false, so the message doesn't reveal which was wrong.
+
+    // Unknown username and wrong password both end up as ok = false, so the message never reveals which one was wrong.
     let ok = false;
     if (rows.length === 1) {
-      try {
-        ok = await bcrypt.compare(plainPass, rows[0].password_hash);
-      } catch (e) {
-        ok = false; // a malformed hash
-      }
+      try { ok = await bcrypt.compare(plainPass, rows[0].password_hash); } catch (e) { ok = false; }
     }
- 
     if (!ok) {
-      return res.send(messagePage("Login", "The login credentials were incorrect.", [{ href: "/login.html", text: "Back to login" }]));
+      return res.send(views.loginPage(undefined, { username, error: "The login credentials were incorrect." }));
     }
- 
-    // Credentials are correct. Start a brand-new session, then remember who logged in.
+
+    // Correct: start a fresh session (so an old session ID can't be reused), then remember the user
     req.session.regenerate(function (err) {
       if (err) {
         console.log("Session error", err);
-        return res.send(messagePage("Login", "Something went wrong. Please try again.", [{ href: "/login.html", text: "Back to login" }]));
+        return res.send(views.loginPage(undefined, { username, error: "Something went wrong. Please try again." }));
       }
- 
-      // The session variable. Store the username exactly as it is in the database.
-      req.session.user = {
-        user_id: rows[0].user_id,
-        username: rows[0].username
-      };
- 
-      // Make sure the session is saved before response
+      req.session.user = { user_id: rows[0].user_id, username: rows[0].username };
       req.session.save(function (err) {
         if (err) {
           console.log("Session save error", err);
-          return res.send(messagePage("Login", "Something went wrong. Please try again.", [{ href: "/login.html", text: "Back to login" }]));
+          return res.send(views.loginPage(undefined, { username, error: "Something went wrong. Please try again." }));
         }
-        res.send(messagePage("Login", "You have logged in successfully", [{ href: "/profile", text: "Visit your profile" }]));
+        res.redirect("/");   // the nav now shows the username and a log out link
       });
     });
   });
 });
 
-
-// Shows the logged in username, read from the session
-app.get("/profile", function (req, res) {
-  // No user in the session meaning the visitor isn't logged in
-  if (!req.session.user) {
-    return res.send(messagePage("Profile", "You are not logged in.", [{ href: "/login.html", text: "Login" }]));
-  }
-
-  // Username came from user input at registration, so escape before showing it.
-  const name = escapeHtml(req.session.user.username);
-  res.send(messagePage("Profile", `Hello ${name}. You are logged in.`, [{ href: "/logout", text: "Logout" }]));
-});
-
-
-// Destroys the session, which removes the stored user, then confirms.
+// ---------- Logout ----------
+// Destroys the session, which removes the stored user, then returns to the login page.
 app.get("/logout", function (req, res) {
   req.session.destroy(function (err) {
     if (err) {
       console.log("Logout error", err);
-      return res.send(messagePage("Logout", "Error logging out.", [{ href: "/profile", text: "Back to profile" }]));
+      return res.redirect("/");
     }
-    res.clearCookie("connect.sid");  // also remove the session cookie from the browser
-    res.send(messagePage("Logout", "Logged out successfully.", [{ href: "/login.html", text: "Login" }]));
+    res.clearCookie("connect.sid");
+    res.redirect("/login?loggedout=1");
   });
+});
+
+// ---------- Logged-in pages ----------
+// The pages below are placeholders; the next steps fill in screenings and reports.
+app.get("/profile", requireLogin, function (req, res) {
+  res.send(views.comingSoonPage(req.session.user, "Profile", "profile",
+    "You are logged in as " + req.session.user.username + "."));
+});
+app.get("/screenings", requireLogin, function (req, res) {
+  res.send(views.comingSoonPage(req.session.user, "Screenings", "screenings", "Screenings will appear here."));
+});
+app.get("/reports", requireLogin, function (req, res) {
+  res.send(views.comingSoonPage(req.session.user, "Format reports", "reports", "Format reports will appear here."));
+});
+
+// Anything else
+app.use(function (req, res) {
+  res.status(404).send(views.notFoundPage(req.session.user));
 });
 
 app.listen(3000, function () {

@@ -1,0 +1,221 @@
+/* Reel Alert stylesheet */
+
+:root {
+    --bg: #E9ECF1;          /* page background: cool pale gray */
+    --surface: #F7F8FA;     /* raised areas such as form panels */
+    --ink: #14182A;         /* main text */
+    --muted: #566079;       /* secondary text */
+    --rule: #C5CAD6;        /* hairlines and borders */
+    --red: #9E2A3A;         /* curtain red: links, buttons */
+    --on-red: #FFFFFF;      /* text on a red button */
+    --brass: #B8892B;       /* brass: marquee bulbs and small accents */
+    --focus: #1F4FBF;       /* keyboard focus ring */
+
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+html.dark_mode {
+    --bg: #0C0E16;
+    --surface: #151826;
+    --ink: #E9E6DD;
+    --muted: #9AA0B4;
+    --rule: #2A2F44;
+    --red: #D4566A;
+    --on-red: #0C0E16;
+    --brass: #D9B057;
+    --focus: #8FB0FF;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.55;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+h1, h2, h3 {
+    font-family: var(--serif);
+    color: var(--ink);
+    line-height: 1.15;
+    margin: 0 0 0.6em;
+}
+h1 { font-size: clamp(2rem, 5vw, 3.2rem); }
+h2 { font-size: 1.6rem; }
+
+p { margin: 0 0 1em; max-width: 65ch; }
+
+a { color: var(--red); text-decoration: underline; text-underline-offset: 0.15em; }
+a:hover { text-decoration-thickness: 2px; }
+
+/* Visible keyboard focus everywhere */
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: 2px;
+}
+
+/* Lets keyboard users jump past the nav */
+.skip-link {
+    position: absolute;
+    left: 1rem;
+    top: -3rem;
+    background: var(--red);
+    color: var(--on-red);
+    padding: 0.5rem 1rem;
+    z-index: 10;
+}
+.skip-link:focus { top: 0.5rem; }
+
+/* ---------- Header ---------- */
+.site-header { background: var(--bg); border-bottom: 1px solid var(--rule); }
+
+.bar {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 1rem 1.5rem 0.9rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 2rem;
+}
+
+.brand {
+    font-family: var(--serif);
+    font-size: 1.7rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: var(--ink);
+    text-decoration: none;
+}
+.brand:hover { color: var(--red); }
+
+.site-nav { flex: 1 1 auto; }
+.site-nav ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.25rem 1.4rem; }
+.site-nav a {
+    color: var(--ink);
+    text-decoration: none;
+    padding: 0.3rem 0;
+    border-bottom: 2px solid transparent;
+}
+.site-nav a:hover { border-bottom-color: var(--rule); }
+/* The page you are on gets a red underline */
+.site-nav a[aria-current="page"] { border-bottom-color: var(--red); font-weight: 600; }
+
+.account { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.whoami { color: var(--muted); font-size: 0.95rem; }
+.whoami strong { color: var(--ink); }
+
+/* ---------- Buttons ---------- */
+.btn, button.btn, #theme_toggler {
+    font-family: inherit;
+    font-size: 0.95rem;
+    padding: 0.5rem 1.1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+}
+.btn {
+    background: var(--red);
+    color: var(--on-red);
+    border: 2px solid var(--red);
+}
+.btn:hover { opacity: 0.88; text-decoration: none; }
+.btn-quiet {
+    background: transparent;
+    color: var(--ink);
+    border: 2px solid var(--rule);
+}
+.btn-quiet:hover { border-color: var(--ink); opacity: 1; }
+#theme_toggler {
+    background: transparent;
+    color: var(--ink);
+    border: 2px solid var(--rule);
+}
+#theme_toggler:hover { border-color: var(--ink); }
+
+/* ---------- Page body ---------- */
+.content {
+    flex: 1;
+    width: 100%;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 3rem;
+}
+
+.site-footer {
+    border-top: 1px solid var(--rule);
+    color: var(--muted);
+    font-size: 0.9rem;
+    text-align: center;
+    padding: 1.2rem 1rem;
+}
+.site-footer p { margin: 0 auto; }
+
+/* ---------- Home ---------- */
+.hero { padding: 1rem 0 2.5rem; max-width: 46rem; }
+.hero .lede { font-family: var(--serif); font-size: 1.3rem; color: var(--muted); }
+.hero .actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1.5rem; }
+
+/* Format guide: one row per format, separated by hairlines */
+.formats h2 { margin-bottom: 0.2em; }
+.formats .sub { color: var(--muted); }
+.formats dl { margin: 1.2rem 0 0; border-top: 1px solid var(--rule); }
+.formats .row {
+    display: grid;
+    grid-template-columns: 11rem 1fr;
+    gap: 0.25rem 1.5rem;
+    padding: 0.9rem 0;
+    border-bottom: 1px solid var(--rule);
+}
+.formats dt { font-family: var(--serif); font-weight: 700; font-size: 1.15rem; }
+.formats dd { margin: 0; color: var(--muted); max-width: 60ch; }
+
+/* ---------- Forms (register, login; reused for create/edit later) ---------- */
+.panel {
+    max-width: 440px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 1.75rem;
+}
+.field { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1.1rem; }
+.field label { font-weight: 600; }
+.field .hint { color: var(--muted); font-size: 0.875rem; }
+.field input, .field select, .field textarea {
+    width: 100%;
+    font: inherit;
+    color: var(--ink);
+    background: var(--bg);
+    border: 2px solid var(--rule);
+    border-radius: 4px;
+    padding: 0.6rem 0.75rem;
+}
+html.dark_mode .field input, html.dark_mode .field select, html.dark_mode .field textarea { color-scheme: dark; }
+.panel .below { margin: 1.25rem 0 0; color: var(--muted); }
+
+/* ---------- Messages ---------- */
+.notice, .error {
+    max-width: 440px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1.25rem;
+    border-left: 4px solid var(--brass);
+    background: var(--surface);
+}
+.error { border-left-color: var(--red); }
+
+@media (max-width: 640px) {
+    .formats .row { grid-template-columns: 1fr; }
+    .bar { padding-left: 1rem; padding-right: 1rem; }
+    .content { padding: 1.75rem 1rem 2.5rem; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .site-nav a, .btn, #theme_toggler { transition: border-color 0.15s ease, opacity 0.15s ease; }
+}
