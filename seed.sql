@@ -7,12 +7,12 @@ USE reel_alert_db;
 INSERT IGNORE INTO users (user_id, username, email, password_hash, home_zip, latitude, longitude, max_travel_radius_mi)
 VALUES (1, 'kduggan', 'kduggan@example.com', '$2b$12$DummyHashString', '30127', 33.882500, -84.700300, 50);
 
-INSERT INTO screenings (user_id, movie_title, theater_name, city, show_date, show_time, screen_format, notes) VALUES
-(1, '2001: A Space Odyssey',  'Lumen Revival House',   'Atlanta',   '2026-12-05', '19:30:00', '70mm',          'Restored 70mm print, one night only.'),
-(1, 'Blade Runner',           'Marquee Arts Cinema',   'Marietta',  '2026-12-12', '20:00:00', '35mm',          'Final Cut on a 35mm print.'),
-(1, 'Interstellar',           'Grand Horizon Theater', 'Atlanta',   '2026-12-18', '18:45:00', 'IMAX Film',     'Anniversary screening on the real IMAX film projector.'),
-(1, 'Spirited Away',          'Lumen Revival House',   'Atlanta',   '2026-12-20', '14:00:00', 'Standard Digital', 'Subtitled showing, 4K restoration.'),
-(1, 'Dune',                   'Starlight Dolby Cinema','Kennesaw',  '2027-01-09', '19:00:00', 'Dolby Cinema',  'Dolby Vision and Atmos double feature opener.');
+INSERT INTO screenings (user_id, movie_title, theater_name, city, show_date, show_time, screen_format, event_type) VALUES
+(1, '2001: A Space Odyssey',  'Lumen Revival House',   'Atlanta',   '2026-12-05', '19:30:00', '70mm',          'New restoration'),
+(1, 'Blade Runner',           'Marquee Arts Cinema',   'Marietta',  '2026-12-12', '20:00:00', '35mm',          'Extended cut'),
+(1, 'Interstellar',           'Grand Horizon Theater', 'Atlanta',   '2026-12-18', '18:45:00', 'IMAX Film',     'Anniversary'),
+(1, 'Spirited Away',          'Lumen Revival House',   'Atlanta',   '2026-12-20', '14:00:00', 'Standard Digital', 'New restoration'),
+(1, 'Dune',                   'Starlight Dolby Cinema','Kennesaw',  '2027-01-09', '19:00:00', 'Dolby Cinema',  'Double feature');
 
 INSERT INTO format_reports (user_id, theater_name, screen_name, projection_type, picture_rating, sound_rating, comment) VALUES
 (1, 'Grand Horizon Theater', 'Screen 1', 'IMAX Film',     5, 5, 'Enormous screen and a sharp, bright image. Worth the drive.'),

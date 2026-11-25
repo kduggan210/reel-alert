@@ -12,6 +12,27 @@ function escapeHtml(text) {
     .replace(/'/g, "&#39;");
 }
 
+// The formats a screening can be shown in. The add/edit form and the server's validation both use this list,
+// and it matches the CHECK constraint in schema.sql.
+const FORMATS = ["35mm", "70mm", "IMAX Film", "IMAX Digital", "Dolby Cinema", "Standard Digital"];
+
+// What kind of special showing it is. Every screening has exactly one. Matches the CHECK constraint in schema.sql.
+const EVENT_TYPES = ["Re-release", "Anniversary", "New restoration", "Extended cut", "Special guest", "Double feature"];
+
+// '2026-12-05' -> 'Sat, Dec 5, 2026'. (The database connection returns dates as plain strings.)
+function formatDate(s) {
+  const parts = String(s).split("-").map(Number);
+  return new Date(parts[0], parts[1] - 1, parts[2])
+    .toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+}
+
+// '19:30:00' -> '7:30 PM'
+function formatTime(t) {
+  const parts = String(t).split(":").map(Number);
+  const h12 = parts[0] % 12 || 12;
+  return h12 + ":" + String(parts[1]).padStart(2, "0") + " " + (parts[0] >= 12 ? "PM" : "AM");
+}
+
 // Nav links shown to each kind of visitor. 'key' is matched against the page's 'active' value.
 const NAV_LOGGED_OUT = [
   { key: "home", href: "/", text: "Home" },
@@ -60,6 +81,7 @@ function layout({ title, user, active, body }) {
     </script>
     <link rel="stylesheet" href="/css/style.css">
     <script src="/js/theme.js" defer></script>
+    <script src="/js/confirm.js" defer></script>
 </head>
 <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -133,7 +155,7 @@ function aboutPage(user) {
             </p>
         </section>
         <section>
-            <h2>The project</h2>
+            <h2>The Project</h2>
             <p>
                 In pursuit of making this experience easier to find, I've decided to build a website dedicated to tracking theatrical rereleases and special editions
                 that would fly under the radar of most users. Simply going to the main page of any exhibitor's website, you would understandably be met with advertisements for the
@@ -196,6 +218,124 @@ function registerPage(user, options) {
   return layout({ title: "Register", user, active: "register", body });
 }
 
+// ---------- Screenings ----------
+
+// List of all screenings. options: { rows, notice }
+// Every logged-in user sees every row, but Edit and Delete buttons only appear on rows the
+// current user added. (The server checks ownership again, so hiding buttons is just convenience.)
+function screeningsPage(user, options) {
+  const o = options || {};
+  const rows = o.rows || [];
+
+  const table = rows.length === 0
+    ? `<p>No screenings yet. <a href="/screenings/new">Add the first one.</a></p>`
+    : `<div class="table-wrap">
+            <table class="data">
+                <thead>
+                    <tr><th>Date</th><th>Time</th><th>Movie</th><th>Theater</th><th>Format</th><th>Added by</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+${rows.map(function (r) {
+  const note = `<div class="note">${escapeHtml(r.event_type)}</div>`;   // grey event-type line under the title
+  const mine = Number(r.user_id) === Number(user.user_id);
+  const actions = mine
+    ? `<div class="row-actions">
+                                <a class="btn btn-quiet btn-small" href="/screenings/${Number(r.screening_id)}/edit">Edit</a>
+                                <form action="/screenings/${Number(r.screening_id)}/delete" method="POST" data-confirm="Delete ${escapeHtml(r.movie_title)} at ${escapeHtml(r.theater_name)}? This can't be undone.">
+                                    <button type="submit" class="btn btn-danger btn-small">Delete</button>
+                                </form>
+                            </div>`
+    : "";
+  return `                    <tr>
+                        <td>${escapeHtml(formatDate(r.show_date))}</td>
+                        <td>${escapeHtml(formatTime(r.show_time))}</td>
+                        <td><strong>${escapeHtml(r.movie_title)}</strong>${note}</td>
+                        <td>${escapeHtml(r.theater_name)}<div class="note">${escapeHtml(r.city)}</div></td>
+                        <td>${escapeHtml(r.screen_format)}</td>
+                        <td>${escapeHtml(r.username)}</td>
+                        <td>${actions}</td>
+                    </tr>`;
+}).join("\n")}
+                </tbody>
+            </table>
+        </div>`;
+
+  const body = `        <div class="page-head">
+            <h1>Screenings</h1>
+            <a class="btn" href="/screenings/new">Add a screening</a>
+        </div>
+        ${o.notice ? `<p class="notice">${escapeHtml(o.notice)}</p>` : ""}
+        ${table}`;
+  return layout({ title: "Screenings", user, active: "screenings", body });
+}
+
+// Add/edit form for a screening. options: { title, action, submitText, values, error }
+// values uses the database column names so the same form can be reused for editing.
+function screeningFormPage(user, options) {
+  const o = options || {};
+  const v = o.values || {};
+  const formatOptions = FORMATS
+    .map(function (f) { return `<option value="${escapeHtml(f)}"${f === v.screen_format ? " selected" : ""}>${escapeHtml(f)}</option>`; })
+    .join("");
+  const eventOptions = EVENT_TYPES
+    .map(function (t) { return `<option value="${escapeHtml(t)}"${t === v.event_type ? " selected" : ""}>${escapeHtml(t)}</option>`; })
+    .join("");
+
+  const body = `        <h1>${escapeHtml(o.title)}</h1>
+        ${o.error ? `<p class="error" role="alert">${escapeHtml(o.error)}</p>` : ""}
+        <form class="panel wide" action="${escapeHtml(o.action)}" method="POST">
+            <div class="field">
+                <label for="movie_title">Movie</label>
+                <input type="text" name="movie_title" id="movie_title" value="${escapeHtml(v.movie_title || "")}" maxlength="150" required>
+            </div>
+            <div class="field">
+                <label for="theater_name">Theater</label>
+                <input type="text" name="theater_name" id="theater_name" value="${escapeHtml(v.theater_name || "")}" maxlength="100" required>
+            </div>
+            <div class="field">
+                <label for="city">City</label>
+                <input type="text" name="city" id="city" value="${escapeHtml(v.city || "")}" maxlength="80" required>
+            </div>
+            <div class="field-row">
+                <div class="field">
+                    <label for="show_date">Date</label>
+                    <input type="date" name="show_date" id="show_date" value="${escapeHtml(v.show_date || "")}" required>
+                </div>
+                <div class="field">
+                    <label for="show_time">Time</label>
+                    <input type="time" name="show_time" id="show_time" value="${escapeHtml(String(v.show_time || "").slice(0, 5))}" required>
+                </div>
+            </div>
+            <div class="field-row">
+                <div class="field">
+                    <label for="screen_format">Format</label>
+                    <select name="screen_format" id="screen_format" required>
+                        <option value="">Choose a format</option>
+                        ${formatOptions}
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="event_type">Event type</label>
+                    <select name="event_type" id="event_type" required>
+                        <option value="">Choose a type</option>
+                        ${eventOptions}
+                    </select>
+                </div>
+            </div>
+            <button type="submit" class="btn">${escapeHtml(o.submitText)}</button>
+            <a class="btn btn-quiet" href="/screenings">Cancel</a>
+        </form>`;
+  return layout({ title: o.title, user, active: "screenings", body });
+}
+
+// Shown when someone tries to change a row that belongs to another user
+function forbiddenPage(user, text) {
+  const body = `        <h1>Not allowed</h1>
+        <p>${escapeHtml(text)}</p>
+        <p><a href="/screenings">Back to screenings</a></p>`;
+  return layout({ title: "Not allowed", user, active: "screenings", body });
+}
+
 // Simple page for sections that are built in a later step
 function comingSoonPage(user, title, active, text) {
   const body = `        <h1>${escapeHtml(title)}</h1>
@@ -209,4 +349,4 @@ function notFoundPage(user) {
   return layout({ title: "Not found", user, active: "", body });
 }
 
-module.exports = { escapeHtml, layout, homePage, aboutPage, loginPage, registerPage, comingSoonPage, notFoundPage };
+module.exports = { FORMATS, EVENT_TYPES, escapeHtml, layout, homePage, aboutPage, loginPage, registerPage, screeningsPage, screeningFormPage, forbiddenPage, comingSoonPage, notFoundPage };

@@ -187,6 +187,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 }
 .field { display: flex; flex-direction: column; gap: 0.35rem; margin-bottom: 1.1rem; }
 .field label { font-weight: 600; }
+.panel.wide { max-width: 560px; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.field textarea { resize: vertical; }
 .field .hint { color: var(--muted); font-size: 0.875rem; }
 .field input, .field select, .field textarea {
     width: 100%;
@@ -200,6 +203,29 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 html.dark_mode .field input, html.dark_mode .field select, html.dark_mode .field textarea { color-scheme: dark; }
 .panel .below { margin: 1.25rem 0 0; color: var(--muted); }
 
+/* ---------- Page heading row with an action button ---------- */
+.page-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem 1.5rem; margin-bottom: 1.25rem; }
+.page-head h1 { margin: 0; }
+
+/* ---------- Data tables ---------- */
+.table-wrap { overflow-x: auto; }   /* scrolls sideways on narrow screens instead of breaking the page */
+table.data { width: 100%; border-collapse: collapse; }
+table.data th {
+    text-align: left;
+    font-size: 0.875rem;
+    color: var(--muted);
+    font-weight: 600;
+    padding: 0.6rem 0.9rem 0.6rem 0;
+    border-bottom: 2px solid var(--rule);
+    white-space: nowrap;
+}
+table.data td { padding: 0.8rem 0.9rem 0.8rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+table.data td:nth-child(1), table.data td:nth-child(2) { white-space: nowrap; }   /* keep date and time on one line */
+table.data .note { color: var(--muted); font-size: 0.9rem; max-width: 38ch; }
+
+/* Row of action buttons inside a table cell (used for Edit/Delete) */
+.row-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+
 /* ---------- Messages ---------- */
 .notice, .error {
     max-width: 440px;
@@ -211,6 +237,7 @@ html.dark_mode .field input, html.dark_mode .field select, html.dark_mode .field
 .error { border-left-color: var(--red); }
 
 @media (max-width: 640px) {
+    .field-row { grid-template-columns: 1fr; }
     .formats .row { grid-template-columns: 1fr; }
     .bar { padding-left: 1rem; padding-right: 1rem; }
     .content { padding: 1.75rem 1rem 2.5rem; }

@@ -1,5 +1,5 @@
 // main.js - Reel Alert server.
-// shared layout, login-aware navigation, registration, login (sessions) and logout.
+// shared layout, login-aware navigation, registration, login (sessions), logout, and screenings (list, create, edit, delete).
 
 require("dotenv").config();               // loads .env values into process.env
 const express = require("express");
@@ -39,7 +39,8 @@ const conn = mysql.createConnection({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  port: process.env.DB_PORT
+  port: process.env.DB_PORT,
+  dateStrings: true   // return DATE/TIME columns as plain text like '2026-12-05' instead of JavaScript Date objects
 });
 conn.connect(function (err) {
   if (err) console.log("Couldnt connect to MySQL", err);
@@ -49,10 +50,13 @@ conn.connect(function (err) {
 const SALT_ROUNDS = 12; // bcrypt cost: higher is slower to guess; the salt is stored inside the hash
 
 // ---------- Access control ----------
-// Logged-out visitors are sent to the login page instead.
+// Logged-out visitors can't use these routes. Page views (GET) are redirected to the login page;
+// anything that tries to change data (POST) is refused with a 401 error, so nothing can be added,
+// edited or deleted without logging in.
 function requireLogin(req, res, next) {
   if (req.session.user) return next();
-  res.redirect("/login?need=1");
+  if (req.method === "GET") return res.redirect("/login?need=1");
+  res.status(401).send(views.loginPage(undefined, { error: "You must be logged in to do that." }));
 }
 
 // ---------- Public pages ----------
@@ -166,14 +170,173 @@ app.get("/logout", function (req, res) {
 });
 
 // ---------- Logged-in pages ----------
-// The pages below are placeholders; the next steps fill in screenings and reports.
+// Profile is a placeholder, and format reports come in a later step.
 app.get("/profile", requireLogin, function (req, res) {
   res.send(views.comingSoonPage(req.session.user, "Profile", "profile",
     "You are logged in as " + req.session.user.username + "."));
 });
+// ---- Screenings: list (Read) ----
 app.get("/screenings", requireLogin, function (req, res) {
-  res.send(views.comingSoonPage(req.session.user, "Screenings", "screenings", "Screenings will appear here."));
+  // join users so each row can show who added it
+  const sql = `select s.screening_id, s.movie_title, s.theater_name, s.city, s.show_date, s.show_time,
+                      s.screen_format, s.event_type, s.user_id, u.username
+               from screenings s join users u on u.user_id = s.user_id
+               order by s.show_date, s.show_time`;
+  conn.query(sql, function (err, rows) {
+    if (err) {
+      console.log("Screenings query error", err);
+      return res.status(500).send(views.comingSoonPage(req.session.user, "Screenings", "screenings", "Something went wrong loading screenings."));
+    }
+    // ?added=1 only selects a fixed message, never user text
+    let notice;
+    if (req.query.added) notice = "Screening added.";
+    if (req.query.updated) notice = "Screening updated.";
+    if (req.query.deleted) notice = "Screening deleted.";
+    res.send(views.screeningsPage(req.session.user, { rows, notice }));
+  });
 });
+
+// ---- Screenings: add form ----
+// Must stay above any /screenings/:id route added later, or "new" would be read as an id.
+app.get("/screenings/new", requireLogin, function (req, res) {
+  res.send(views.screeningFormPage(req.session.user, {
+    title: "Add a screening", action: "/screenings", submitText: "Add screening", values: {}
+  }));
+});
+
+// Checks the form data. Returns { values } with cleaned data, or { values, error } if something is wrong.
+function readScreeningForm(body) {
+  const b = body || {};
+  const values = {
+    movie_title: (b.movie_title || "").trim(),
+    theater_name: (b.theater_name || "").trim(),
+    city: (b.city || "").trim(),
+    show_date: (b.show_date || "").trim(),
+    show_time: (b.show_time || "").trim(),
+    screen_format: (b.screen_format || "").trim(),
+    event_type: (b.event_type || "").trim()
+  };
+
+  if (!values.movie_title || !values.theater_name || !values.city) return { values, error: "Movie, theater and city are required." };
+  if (values.movie_title.length > 150 || values.theater_name.length > 100 || values.city.length > 80)
+    return { values, error: "Movie (max 150), theater (max 100) or city (max 80) is too long." };
+
+  // Date must look like 2026-12-05 and be a real calendar day (rejects things like 2026-02-31)
+  const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(values.show_date);
+  const realDate = d && new Date(Date.UTC(+d[1], +d[2] - 1, +d[3])).toISOString().slice(0, 10) === values.show_date;
+  if (!realDate) return { values, error: "Enter a valid date." };
+
+  const t = /^(\d{2}):(\d{2})$/.exec(values.show_time);
+  if (!t || +t[1] > 23 || +t[2] > 59) return { values, error: "Enter a valid time." };
+
+  if (!views.FORMATS.includes(values.screen_format)) return { values, error: "Choose one of the listed formats." };
+  if (!views.EVENT_TYPES.includes(values.event_type)) return { values, error: "Choose one of the listed event types." };
+
+  return { values };
+}
+
+// ---- Screenings: create ----
+app.post("/screenings", requireLogin, function (req, res) {
+  const result = readScreeningForm(req.body);
+  if (result.error) {
+    return res.status(400).send(views.screeningFormPage(req.session.user, {
+      title: "Add a screening", action: "/screenings", submitText: "Add screening",
+      values: result.values, error: result.error
+    }));
+  }
+
+  const v = result.values;
+  // The owner always comes from the session, never from the form, so nobody can add a row as someone else
+  const sql = `insert into screenings (user_id, movie_title, theater_name, city, show_date, show_time, screen_format, event_type)
+               values (?,?,?,?,?,?,?,?)`;
+  const params = [req.session.user.user_id, v.movie_title, v.theater_name, v.city, v.show_date, v.show_time, v.screen_format, v.event_type];
+  conn.query(sql, params, function (err) {
+    if (err) {
+      console.log("Error inserting screening", err);
+      return res.status(500).send(views.screeningFormPage(req.session.user, {
+        title: "Add a screening", action: "/screenings", submitText: "Add screening",
+        values: v, error: "Something went wrong. Please try again."
+      }));
+    }
+    res.redirect("/screenings?added=1");
+  });
+});
+// ---- Screenings: edit / update / delete ----
+// Finds the screening named in the URL and checks that the logged-in user owns it.
+//   - id isn't a number, or no such screening -> 404 page
+//   - screening belongs to someone else        -> 403 page (nothing is changed)
+// Only when it is yours does it call done(row).
+function withOwnedScreening(req, res, done) {
+  const user = req.session.user;
+  if (!/^\d+$/.test(req.params.id)) {
+    return res.status(404).send(views.notFoundPage(user));
+  }
+  conn.query("select * from screenings where screening_id = ?", [req.params.id], function (err, rows) {
+    if (err) {
+      console.log("Screening lookup error", err);
+      return res.status(500).send(views.forbiddenPage(user, "Something went wrong. Please try again."));
+    }
+    if (rows.length === 0) return res.status(404).send(views.notFoundPage(user));
+    if (Number(rows[0].user_id) !== Number(user.user_id)) {
+      return res.status(403).send(views.forbiddenPage(user, "You can only change screenings you added."));
+    }
+    done(rows[0]);
+  });
+}
+
+// Edit form, filled in with the current values
+app.get("/screenings/:id/edit", requireLogin, function (req, res) {
+  withOwnedScreening(req, res, function (row) {
+    res.send(views.screeningFormPage(req.session.user, {
+      title: "Edit screening", action: "/screenings/" + row.screening_id, submitText: "Save changes", values: row
+    }));
+  });
+});
+
+// Update: same checks as creating, then saves the changes
+app.post("/screenings/:id", requireLogin, function (req, res) {
+  withOwnedScreening(req, res, function (row) {
+    const result = readScreeningForm(req.body);
+    const action = "/screenings/" + row.screening_id;
+    if (result.error) {
+      return res.status(400).send(views.screeningFormPage(req.session.user, {
+        title: "Edit screening", action, submitText: "Save changes", values: result.values, error: result.error
+      }));
+    }
+
+    const v = result.values;
+    // "and user_id = ?" repeats the ownership check inside the query itself. The owner is never taken from the form.
+    const sql = `update screenings set movie_title = ?, theater_name = ?, city = ?, show_date = ?, show_time = ?,
+                        screen_format = ?, event_type = ?
+                 where screening_id = ? and user_id = ?`;
+    const params = [v.movie_title, v.theater_name, v.city, v.show_date, v.show_time, v.screen_format, v.event_type,
+                    row.screening_id, req.session.user.user_id];
+    conn.query(sql, params, function (err) {
+      if (err) {
+        console.log("Error updating screening", err);
+        return res.status(500).send(views.screeningFormPage(req.session.user, {
+          title: "Edit screening", action, submitText: "Save changes", values: v, error: "Something went wrong. Please try again."
+        }));
+      }
+      res.redirect("/screenings?updated=1");
+    });
+  });
+});
+
+// Delete (a POST, so a link or page refresh can never delete anything by accident)
+app.post("/screenings/:id/delete", requireLogin, function (req, res) {
+  withOwnedScreening(req, res, function (row) {
+    conn.query("delete from screenings where screening_id = ? and user_id = ?",
+      [row.screening_id, req.session.user.user_id], function (err) {
+        if (err) {
+          console.log("Error deleting screening", err);
+          return res.status(500).send(views.forbiddenPage(req.session.user, "Something went wrong. Please try again."));
+        }
+        res.redirect("/screenings?deleted=1");
+      });
+  });
+});
+
 app.get("/reports", requireLogin, function (req, res) {
   res.send(views.comingSoonPage(req.session.user, "Format reports", "reports", "Format reports will appear here."));
 });

@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS screenings (
   show_date    DATE NOT NULL,
   show_time    TIME NOT NULL,
   screen_format VARCHAR(30) NOT NULL,
-  notes        VARCHAR(500) NULL,
+  event_type   VARCHAR(30) NOT NULL,
   created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (screening_id),
@@ -56,7 +56,9 @@ CREATE TABLE IF NOT EXISTS screenings (
   CONSTRAINT fk_screenings_user
     FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE,
   CONSTRAINT chk_screenings_format CHECK (screen_format IN
-    ('35mm','70mm','IMAX Film','IMAX Digital','Dolby Cinema','Standard Digital'))
+    ('35mm','70mm','IMAX Film','IMAX Digital','Dolby Cinema','Standard Digital')),
+  CONSTRAINT chk_screenings_event CHECK (event_type IN
+    ('Re-release','Anniversary','New restoration','Extended cut','Special guest','Double feature'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---- format_reports (CRUD area 2) ----
