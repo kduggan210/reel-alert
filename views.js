@@ -155,7 +155,7 @@ function aboutPage(user) {
             </p>
         </section>
         <section>
-            <h2>The Project</h2>
+            <h2>The project</h2>
             <p>
                 In pursuit of making this experience easier to find, I've decided to build a website dedicated to tracking theatrical rereleases and special editions
                 that would fly under the radar of most users. Simply going to the main page of any exhibitor's website, you would understandably be met with advertisements for the
@@ -328,12 +328,130 @@ function screeningFormPage(user, options) {
   return layout({ title: o.title, user, active: "screenings", body });
 }
 
-// Shown when someone tries to change a row that belongs to another user
-function forbiddenPage(user, text) {
+// ---------- Format reports ----------
+
+// 4 -> "★★★★☆" (decorative) plus "4/5" text so the rating is readable without the symbols
+function stars(n) {
+  const k = Math.max(0, Math.min(5, Number(n) || 0));
+  return `<span class="stars" aria-hidden="true">${"★".repeat(k)}${"☆".repeat(5 - k)}</span> <span class="rating-num">${k}/5</span>`;
+}
+
+// List of all format reports. options: { rows, notice }
+// Same rule as screenings: everyone sees every report, Edit and Delete only appear on your own.
+function reportsPage(user, options) {
+  const o = options || {};
+  const rows = o.rows || [];
+
+  const table = rows.length === 0
+    ? `<p>No format reports yet. <a href="/reports/new">Write the first one.</a></p>`
+    : `<div class="table-wrap">
+            <table class="data">
+                <thead>
+                    <tr><th>Theater</th><th>Format</th><th>Picture</th><th>Sound</th><th>Comment</th><th>Added by</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+${rows.map(function (r) {
+  const mine = Number(r.user_id) === Number(user.user_id);
+  const actions = mine
+    ? `<div class="row-actions">
+                                <a class="btn btn-quiet btn-small" href="/reports/${Number(r.report_id)}/edit">Edit</a>
+                                <form action="/reports/${Number(r.report_id)}/delete" method="POST" data-confirm="Delete your report on ${escapeHtml(r.theater_name)}, ${escapeHtml(r.screen_name)}? This can't be undone.">
+                                    <button type="submit" class="btn btn-danger btn-small">Delete</button>
+                                </form>
+                            </div>`
+    : "";
+  return `                    <tr>
+                        <td><strong>${escapeHtml(r.theater_name)}</strong><div class="note">${escapeHtml(r.screen_name)}</div></td>
+                        <td>${escapeHtml(r.projection_type)}</td>
+                        <td>${stars(r.picture_rating)}</td>
+                        <td>${stars(r.sound_rating)}</td>
+                        <td class="comment">${r.comment ? escapeHtml(r.comment) : `<span class="note">No comment</span>`}</td>
+                        <td>${escapeHtml(r.username)}</td>
+                        <td>${actions}</td>
+                    </tr>`;
+}).join("\n")}
+                </tbody>
+            </table>
+        </div>`;
+
+  const body = `        <div class="page-head">
+            <h1>Format reports</h1>
+            <a class="btn" href="/reports/new">Add a report</a>
+        </div>
+        <p class="sub">How a screen actually looks and sounds, from people who have sat in it.</p>
+        ${o.notice ? `<p class="notice">${escapeHtml(o.notice)}</p>` : ""}
+        ${table}`;
+  return layout({ title: "Format reports", user, active: "reports", body });
+}
+
+// Add/edit form for a report. options: { title, action, submitText, values, error }
+function reportFormPage(user, options) {
+  const o = options || {};
+  const v = o.values || {};
+  const formatOptions = FORMATS
+    .map(function (f) { return `<option value="${escapeHtml(f)}"${f === v.projection_type ? " selected" : ""}>${escapeHtml(f)}</option>`; })
+    .join("");
+  const ratingOptions = function (current) {
+    return [1, 2, 3, 4, 5]
+      .map(function (n) { return `<option value="${n}"${String(n) === String(current) ? " selected" : ""}>${n}</option>`; })
+      .join("");
+  };
+
+  const body = `        <h1>${escapeHtml(o.title)}</h1>
+        ${o.error ? `<p class="error" role="alert">${escapeHtml(o.error)}</p>` : ""}
+        <form class="panel wide" action="${escapeHtml(o.action)}" method="POST">
+            <div class="field-row">
+                <div class="field">
+                    <label for="theater_name">Theater</label>
+                    <input type="text" name="theater_name" id="theater_name" value="${escapeHtml(v.theater_name || "")}" maxlength="100" required>
+                </div>
+                <div class="field">
+                    <label for="screen_name">Screen</label>
+                    <input type="text" name="screen_name" id="screen_name" value="${escapeHtml(v.screen_name || "")}" maxlength="50" placeholder="Screen 1" required>
+                </div>
+            </div>
+            <div class="field">
+                <label for="projection_type">Format</label>
+                <select name="projection_type" id="projection_type" required>
+                    <option value="">Choose a format</option>
+                    ${formatOptions}
+                </select>
+            </div>
+            <div class="field-row">
+                <div class="field">
+                    <label for="picture_rating">Picture (1 to 5)</label>
+                    <select name="picture_rating" id="picture_rating" required>
+                        <option value="">Rate the picture</option>
+                        ${ratingOptions(v.picture_rating)}
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="sound_rating">Sound (1 to 5)</label>
+                    <select name="sound_rating" id="sound_rating" required>
+                        <option value="">Rate the sound</option>
+                        ${ratingOptions(v.sound_rating)}
+                    </select>
+                </div>
+            </div>
+            <div class="field">
+                <label for="comment">Comment (optional)</label>
+                <textarea name="comment" id="comment" rows="4" maxlength="1000">${escapeHtml(v.comment || "")}</textarea>
+                <span class="hint">Seating, screen size, brightness, anything worth knowing. Up to 1000 characters.</span>
+            </div>
+            <button type="submit" class="btn">${escapeHtml(o.submitText)}</button>
+            <a class="btn btn-quiet" href="/reports">Cancel</a>
+        </form>`;
+  return layout({ title: o.title, user, active: "reports", body });
+}
+
+// Shown when someone tries to change a row that belongs to another user.
+// back = { href, label } for the link underneath; defaults to the screenings list.
+function forbiddenPage(user, text, back) {
+  const b = back || { href: "/screenings", label: "Back to screenings" };
   const body = `        <h1>Not allowed</h1>
         <p>${escapeHtml(text)}</p>
-        <p><a href="/screenings">Back to screenings</a></p>`;
-  return layout({ title: "Not allowed", user, active: "screenings", body });
+        <p><a href="${escapeHtml(b.href)}">${escapeHtml(b.label)}</a></p>`;
+  return layout({ title: "Not allowed", user, active: b.href.indexOf("/reports") === 0 ? "reports" : "screenings", body });
 }
 
 // Simple page for sections that are built in a later step
@@ -349,4 +467,4 @@ function notFoundPage(user) {
   return layout({ title: "Not found", user, active: "", body });
 }
 
-module.exports = { FORMATS, EVENT_TYPES, escapeHtml, layout, homePage, aboutPage, loginPage, registerPage, screeningsPage, screeningFormPage, forbiddenPage, comingSoonPage, notFoundPage };
+module.exports = { FORMATS, EVENT_TYPES, escapeHtml, layout, homePage, aboutPage, loginPage, registerPage, screeningsPage, screeningFormPage, reportsPage, reportFormPage, forbiddenPage, comingSoonPage, notFoundPage };

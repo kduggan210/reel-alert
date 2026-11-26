@@ -226,6 +226,12 @@ table.data .note { color: var(--muted); font-size: 0.9rem; max-width: 38ch; }
 /* Row of action buttons inside a table cell (used for Edit/Delete) */
 .row-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 
+/* Smaller buttons for use inside tables, and a red outline style for destructive actions */
+.btn-small { padding: 0.25rem 0.7rem; font-size: 0.85rem; }
+.btn-danger { background: transparent; color: var(--red); border: 2px solid var(--red); }
+.btn-danger:hover { background: var(--red); color: var(--on-red); opacity: 1; }
+.row-actions form { margin: 0; }
+
 /* ---------- Messages ---------- */
 .notice, .error {
     max-width: 440px;
@@ -246,3 +252,9 @@ table.data .note { color: var(--muted); font-size: 0.9rem; max-width: 38ch; }
 @media (prefers-reduced-motion: no-preference) {
     .site-nav a, .btn, #theme_toggler { transition: border-color 0.15s ease, opacity 0.15s ease; }
 }
+
+/* ---- Format reports ---- */
+.stars { color: var(--brass); letter-spacing: 0.1em; white-space: nowrap; }
+.rating-num { color: var(--muted); font-size: 0.875rem; }
+table.data td.comment { max-width: 36ch; overflow-wrap: anywhere; }
+p.sub { color: var(--muted); margin-top: -0.5rem; }

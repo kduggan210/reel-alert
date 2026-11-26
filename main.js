@@ -170,7 +170,7 @@ app.get("/logout", function (req, res) {
 });
 
 // ---------- Logged-in pages ----------
-// Profile is a placeholder, and format reports come in a later step.
+// Profile is a placeholder and is built in a later step.
 app.get("/profile", requireLogin, function (req, res) {
   res.send(views.comingSoonPage(req.session.user, "Profile", "profile",
     "You are logged in as " + req.session.user.username + "."));
@@ -337,8 +337,161 @@ app.post("/screenings/:id/delete", requireLogin, function (req, res) {
   });
 });
 
+// ---------- Format reports (second CRUD area) ----------
+// Same rules as screenings: login for everything, and only the owner can edit or delete a report.
+const REPORTS_BACK = { href: "/reports", label: "Back to format reports" };
+
+// ---- Reports: list (Read) ----
 app.get("/reports", requireLogin, function (req, res) {
-  res.send(views.comingSoonPage(req.session.user, "Format reports", "reports", "Format reports will appear here."));
+  const sql = `select r.report_id, r.theater_name, r.screen_name, r.projection_type, r.picture_rating,
+                      r.sound_rating, r.comment, r.user_id, u.username
+               from format_reports r join users u on u.user_id = r.user_id
+               order by r.theater_name, r.screen_name, r.report_id`;
+  conn.query(sql, function (err, rows) {
+    if (err) {
+      console.log("Reports query error", err);
+      return res.status(500).send(views.forbiddenPage(req.session.user, "Something went wrong loading reports.", REPORTS_BACK));
+    }
+    // ?added=1 only selects a fixed message, never user text
+    let notice;
+    if (req.query.added) notice = "Report added.";
+    if (req.query.updated) notice = "Report updated.";
+    if (req.query.deleted) notice = "Report deleted.";
+    res.send(views.reportsPage(req.session.user, { rows, notice }));
+  });
+});
+
+// ---- Reports: add form (must stay above /reports/:id routes) ----
+app.get("/reports/new", requireLogin, function (req, res) {
+  res.send(views.reportFormPage(req.session.user, {
+    title: "Add a format report", action: "/reports", submitText: "Add report", values: {}
+  }));
+});
+
+// Checks the form data. Returns { values } with cleaned data, or { values, error } if something is wrong.
+function readReportForm(body) {
+  const b = body || {};
+  const values = {
+    theater_name: (b.theater_name || "").trim(),
+    screen_name: (b.screen_name || "").trim(),
+    projection_type: (b.projection_type || "").trim(),
+    picture_rating: (b.picture_rating || "").trim(),
+    sound_rating: (b.sound_rating || "").trim(),
+    comment: (b.comment || "").trim()
+  };
+
+  if (!values.theater_name || !values.screen_name) return { values, error: "Theater and screen are required." };
+  if (values.theater_name.length > 100 || values.screen_name.length > 50)
+    return { values, error: "Theater (max 100) or screen (max 50) is too long." };
+  if (!views.FORMATS.includes(values.projection_type)) return { values, error: "Choose one of the listed formats." };
+  if (!/^[1-5]$/.test(values.picture_rating) || !/^[1-5]$/.test(values.sound_rating))
+    return { values, error: "Ratings must be whole numbers from 1 to 5." };
+  if (values.comment.length > 1000) return { values, error: "Comment is too long (max 1000 characters)." };
+
+  return { values };
+}
+
+// ---- Reports: create ----
+app.post("/reports", requireLogin, function (req, res) {
+  const result = readReportForm(req.body);
+  if (result.error) {
+    return res.status(400).send(views.reportFormPage(req.session.user, {
+      title: "Add a format report", action: "/reports", submitText: "Add report",
+      values: result.values, error: result.error
+    }));
+  }
+
+  const v = result.values;
+  // The owner always comes from the session, never from the form
+  const sql = `insert into format_reports (user_id, theater_name, screen_name, projection_type, picture_rating, sound_rating, comment)
+               values (?,?,?,?,?,?,?)`;
+  const params = [req.session.user.user_id, v.theater_name, v.screen_name, v.projection_type,
+                  Number(v.picture_rating), Number(v.sound_rating), v.comment === "" ? null : v.comment];
+  conn.query(sql, params, function (err) {
+    if (err) {
+      console.log("Error inserting report", err);
+      return res.status(500).send(views.reportFormPage(req.session.user, {
+        title: "Add a format report", action: "/reports", submitText: "Add report",
+        values: v, error: "Something went wrong. Please try again."
+      }));
+    }
+    res.redirect("/reports?added=1");
+  });
+});
+
+// Finds the report named in the URL and checks that the logged-in user owns it.
+//   - id isn't a number, or no such report -> 404 page
+//   - report belongs to someone else        -> 403 page (nothing is changed)
+// Only when it is yours does it call done(row).
+function withOwnedReport(req, res, done) {
+  const user = req.session.user;
+  if (!/^\d+$/.test(req.params.id)) {
+    return res.status(404).send(views.notFoundPage(user));
+  }
+  conn.query("select * from format_reports where report_id = ?", [req.params.id], function (err, rows) {
+    if (err) {
+      console.log("Report lookup error", err);
+      return res.status(500).send(views.forbiddenPage(user, "Something went wrong. Please try again.", REPORTS_BACK));
+    }
+    if (rows.length === 0) return res.status(404).send(views.notFoundPage(user));
+    if (Number(rows[0].user_id) !== Number(user.user_id)) {
+      return res.status(403).send(views.forbiddenPage(user, "You can only change reports you added.", REPORTS_BACK));
+    }
+    done(rows[0]);
+  });
+}
+
+// ---- Reports: edit form, filled in with the current values ----
+app.get("/reports/:id/edit", requireLogin, function (req, res) {
+  withOwnedReport(req, res, function (row) {
+    res.send(views.reportFormPage(req.session.user, {
+      title: "Edit format report", action: "/reports/" + row.report_id, submitText: "Save changes", values: row
+    }));
+  });
+});
+
+// ---- Reports: update ----
+app.post("/reports/:id", requireLogin, function (req, res) {
+  withOwnedReport(req, res, function (row) {
+    const result = readReportForm(req.body);
+    const action = "/reports/" + row.report_id;
+    if (result.error) {
+      return res.status(400).send(views.reportFormPage(req.session.user, {
+        title: "Edit format report", action, submitText: "Save changes", values: result.values, error: result.error
+      }));
+    }
+
+    const v = result.values;
+    // "and user_id = ?" repeats the ownership check inside the query itself
+    const sql = `update format_reports set theater_name = ?, screen_name = ?, projection_type = ?,
+                        picture_rating = ?, sound_rating = ?, comment = ?
+                 where report_id = ? and user_id = ?`;
+    const params = [v.theater_name, v.screen_name, v.projection_type, Number(v.picture_rating), Number(v.sound_rating),
+                    v.comment === "" ? null : v.comment, row.report_id, req.session.user.user_id];
+    conn.query(sql, params, function (err) {
+      if (err) {
+        console.log("Error updating report", err);
+        return res.status(500).send(views.reportFormPage(req.session.user, {
+          title: "Edit format report", action, submitText: "Save changes", values: v, error: "Something went wrong. Please try again."
+        }));
+      }
+      res.redirect("/reports?updated=1");
+    });
+  });
+});
+
+// ---- Reports: delete (a POST, so a link or refresh can never delete anything) ----
+app.post("/reports/:id/delete", requireLogin, function (req, res) {
+  withOwnedReport(req, res, function (row) {
+    conn.query("delete from format_reports where report_id = ? and user_id = ?",
+      [row.report_id, req.session.user.user_id], function (err) {
+        if (err) {
+          console.log("Error deleting report", err);
+          return res.status(500).send(views.forbiddenPage(req.session.user, "Something went wrong. Please try again.", REPORTS_BACK));
+        }
+        res.redirect("/reports?deleted=1");
+      });
+  });
 });
 
 // Anything else
