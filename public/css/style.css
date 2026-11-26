@@ -258,3 +258,9 @@ table.data .note { color: var(--muted); font-size: 0.9rem; max-width: 38ch; }
 .rating-num { color: var(--muted); font-size: 0.875rem; }
 table.data td.comment { max-width: 36ch; overflow-wrap: anywhere; }
 p.sub { color: var(--muted); margin-top: -0.5rem; }
+
+/* ---- Profile ---- */
+.panel h2 { margin-top: 0; font-size: 1.25rem; }
+.panel .hint { color: var(--muted); font-size: 0.9rem; margin-top: -0.4rem; }
+.panel.wide + .panel.wide { margin-top: 1.5rem; }
+.danger-zone { border-color: var(--red); }

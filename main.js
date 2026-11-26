@@ -70,6 +70,7 @@ app.get("/login", function (req, res) {
   if (req.query.registered) notice = "Account created. You can log in now.";
   if (req.query.need) notice = "Please log in to see that page.";
   if (req.query.loggedout) notice = "You have been logged out.";
+  if (req.query.deleted) notice = "Your account has been deleted.";
   res.send(views.loginPage(undefined, { notice }));
 });
 
@@ -169,12 +170,139 @@ app.get("/logout", function (req, res) {
   });
 });
 
-// ---------- Logged-in pages ----------
-// Profile is a placeholder and is built in a later step.
+// ---------- Profile (logged in) ----------
+// Four small forms, each with its own route. Every one works on req.session.user.user_id only,
+// so a person can never change someone else's account, whatever the form contains.
+const PROFILE_NOTICES = {
+  account: "Account saved.", location: "Location saved.", password: "Password changed."
+};
+
+// Loads the current user's row, then calls done(row). Redirects to login if the account no longer exists.
+function withProfile(req, res, done) {
+  const sql = "select user_id, username, email, home_zip, max_travel_radius_mi, created_at from users where user_id = ?";
+  conn.query(sql, [req.session.user.user_id], function (err, rows) {
+    if (err) {
+      console.log("Profile lookup error", err);
+      return res.status(500).send(views.forbiddenPage(req.session.user, "Something went wrong. Please try again.", { href: "/", label: "Back to home" }));
+    }
+    if (rows.length === 0) return res.redirect("/logout");
+    done(rows[0]);
+  });
+}
+
+// Shows the profile page again with data from the database, plus any extras (errors, typed values).
+function showProfile(req, res, row, extra) {
+  const x = extra || {};
+  res.status(x.status || 200).send(views.profilePage(req.session.user, {
+    account: x.account || row, location: x.location || row, created_at: row.created_at,
+    notice: x.notice, errors: x.errors
+  }));
+}
+
 app.get("/profile", requireLogin, function (req, res) {
-  res.send(views.comingSoonPage(req.session.user, "Profile", "profile",
-    "You are logged in as " + req.session.user.username + "."));
+  withProfile(req, res, function (row) {
+    // ?saved=... only selects a fixed message, never user text
+    showProfile(req, res, row, { notice: PROFILE_NOTICES[req.query.saved] });
+  });
 });
+
+// Update username and e-mail
+app.post("/profile/account", requireLogin, function (req, res) {
+  withProfile(req, res, function (row) {
+    const b = req.body || {};
+    const account = { username: (b.username || "").trim(), email: (b.email || "").trim() };
+    const fail = function (msg, status) { showProfile(req, res, row, { account, errors: { account: msg }, status: status || 400 }); };
+
+    if (!account.username || !account.email) return fail("Username and e-mail are required.");
+    if (account.username.length > 50 || account.email.length > 100) return fail("Username (max 50) or e-mail (max 100) is too long.");
+
+    conn.query("update users set username = ?, email = ? where user_id = ?",
+      [account.username, account.email, req.session.user.user_id], function (err) {
+        if (err) {
+          if (err.code === "ER_DUP_ENTRY") return fail("That username or e-mail is already taken.");
+          console.log("Error updating account", err);
+          return fail("Something went wrong. Please try again.", 500);
+        }
+        req.session.user.username = account.username;   // so the header shows the new name straight away
+        res.redirect("/profile?saved=account");
+      });
+  });
+});
+
+// Update home ZIP and travel radius
+app.post("/profile/location", requireLogin, function (req, res) {
+  withProfile(req, res, function (row) {
+    const b = req.body || {};
+    const location = { home_zip: (b.home_zip || "").trim(), max_travel_radius_mi: (b.max_travel_radius_mi || "").trim() };
+    const fail = function (msg, status) { showProfile(req, res, row, { location, errors: { location: msg }, status: status || 400 }); };
+
+    if (location.home_zip !== "" && !/^\d{5}$/.test(location.home_zip)) return fail("Enter a 5-digit ZIP code, or leave it blank.");
+    if (!/^\d+$/.test(location.max_travel_radius_mi) || +location.max_travel_radius_mi < 1 || +location.max_travel_radius_mi > 500)
+      return fail("Travel radius must be a whole number from 1 to 500.");
+
+    // The saved coordinates belonged to the old ZIP, so they are cleared whenever the ZIP is saved
+    // (the "near me" step fills them in again from the new ZIP).
+    const zip = location.home_zip === "" ? null : location.home_zip;
+    conn.query("update users set home_zip = ?, latitude = null, longitude = null, max_travel_radius_mi = ? where user_id = ?",
+      [zip, Number(location.max_travel_radius_mi), req.session.user.user_id], function (err) {
+        if (err) {
+          console.log("Error updating location", err);
+          return fail("Something went wrong. Please try again.", 500);
+        }
+        res.redirect("/profile?saved=location");
+      });
+  });
+});
+
+// Change password: needs the current one, so a borrowed logged-in browser can't lock the owner out
+app.post("/profile/password", requireLogin, function (req, res) {
+  const b = req.body || {};
+  const current = b.current_password || "", next = b.new_password || "", confirm = b.confirm_password || "";
+  conn.query("select password_hash from users where user_id = ?", [req.session.user.user_id], function (err, rows) {
+    withProfile(req, res, async function (row) {
+      const fail = function (msg, status) { showProfile(req, res, row, { errors: { password: msg }, status: status || 400 }); };
+      if (err || rows.length === 0) return fail("Something went wrong. Please try again.", 500);
+      if (next.length < 8) return fail("New password must be at least 8 characters.");
+      if (next !== confirm) return fail("The new passwords do not match.");
+      try {
+        if (!(await bcrypt.compare(current, rows[0].password_hash))) return fail("Your current password is incorrect.");
+        const hash = await bcrypt.hash(next, SALT_ROUNDS);
+        conn.query("update users set password_hash = ? where user_id = ?", [hash, req.session.user.user_id], function (err2) {
+          if (err2) { console.log("Error changing password", err2); return fail("Something went wrong. Please try again.", 500); }
+          res.redirect("/profile?saved=password");
+        });
+      } catch (e) {
+        console.log("Password change error", e);
+        fail("Something went wrong. Please try again.", 500);
+      }
+    });
+  });
+});
+
+// Delete the account. Foreign keys with ON DELETE CASCADE remove the user's screenings and reports too.
+app.post("/profile/delete", requireLogin, function (req, res) {
+  const password = (req.body || {}).password || "";
+  conn.query("select password_hash from users where user_id = ?", [req.session.user.user_id], function (err, rows) {
+    withProfile(req, res, async function (row) {
+      const fail = function (msg, status) { showProfile(req, res, row, { errors: { delete: msg }, status: status || 400 }); };
+      if (err || rows.length === 0) return fail("Something went wrong. Please try again.", 500);
+      try {
+        if (!(await bcrypt.compare(password, rows[0].password_hash))) return fail("That password is incorrect, so nothing was deleted.");
+        conn.query("delete from users where user_id = ?", [req.session.user.user_id], function (err2) {
+          if (err2) { console.log("Error deleting account", err2); return fail("Something went wrong. Please try again.", 500); }
+          req.session.destroy(function () {
+            res.clearCookie("connect.sid");
+            res.redirect("/login?deleted=1");
+          });
+        });
+      } catch (e) {
+        console.log("Account delete error", e);
+        fail("Something went wrong. Please try again.", 500);
+      }
+    });
+  });
+});
+
 // ---- Screenings: list (Read) ----
 app.get("/screenings", requireLogin, function (req, res) {
   // join users so each row can show who added it

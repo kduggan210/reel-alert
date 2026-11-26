@@ -444,6 +444,90 @@ function reportFormPage(user, options) {
   return layout({ title: o.title, user, active: "reports", body });
 }
 
+// ---------- Profile ----------
+
+// Profile page: four separate forms (account, location, password, delete account).
+// options: { account: {username, email}, location: {home_zip, max_travel_radius_mi}, created_at,
+//            notice, errors: { account, location, password, delete } }
+// Each form shows its own error, so a mistake in one never wipes what was typed in another.
+function profilePage(user, options) {
+  const o = options || {};
+  const a = o.account || {};
+  const l = o.location || {};
+  const errors = o.errors || {};
+  const err = function (key) { return errors[key] ? `<p class="error" role="alert">${escapeHtml(errors[key])}</p>` : ""; };
+
+  const body = `        <h1>Profile</h1>
+        <p class="sub">Signed in as ${escapeHtml(user.username)}.${o.created_at ? ` Member since ${escapeHtml(formatDate(String(o.created_at).slice(0, 10)))}.` : ""}</p>
+        ${o.notice ? `<p class="notice">${escapeHtml(o.notice)}</p>` : ""}
+
+        <form class="panel wide" action="/profile/account" method="POST">
+            <h2>Account</h2>
+            ${err("account")}
+            <div class="field-row">
+                <div class="field">
+                    <label for="username">Username</label>
+                    <input type="text" name="username" id="username" value="${escapeHtml(a.username || "")}" maxlength="50" autocomplete="username" required>
+                </div>
+                <div class="field">
+                    <label for="email">E-mail</label>
+                    <input type="email" name="email" id="email" value="${escapeHtml(a.email || "")}" maxlength="100" autocomplete="email" required>
+                </div>
+            </div>
+            <button type="submit" class="btn">Save account</button>
+        </form>
+
+        <form class="panel wide" action="/profile/location" method="POST">
+            <h2>Home location</h2>
+            <p class="hint">Used to find screenings near you. Leave the ZIP blank to clear it.</p>
+            ${err("location")}
+            <div class="field-row">
+                <div class="field">
+                    <label for="home_zip">Home ZIP</label>
+                    <input type="text" name="home_zip" id="home_zip" value="${escapeHtml(l.home_zip || "")}" maxlength="5" inputmode="numeric" pattern="[0-9]{5}" placeholder="30301" autocomplete="postal-code">
+                </div>
+                <div class="field">
+                    <label for="max_travel_radius_mi">Travel radius (miles)</label>
+                    <input type="number" name="max_travel_radius_mi" id="max_travel_radius_mi" value="${escapeHtml(l.max_travel_radius_mi === undefined || l.max_travel_radius_mi === null ? 25 : l.max_travel_radius_mi)}" min="1" max="500" step="1" required>
+                </div>
+            </div>
+            <button type="submit" class="btn">Save location</button>
+        </form>
+
+        <form class="panel wide" action="/profile/password" method="POST">
+            <h2>Change password</h2>
+            ${err("password")}
+            <div class="field">
+                <label for="current_password">Current password</label>
+                <input type="password" name="current_password" id="current_password" autocomplete="current-password" required>
+            </div>
+            <div class="field-row">
+                <div class="field">
+                    <label for="new_password">New password</label>
+                    <input type="password" name="new_password" id="new_password" minlength="8" autocomplete="new-password" required>
+                    <span class="hint">At least 8 characters.</span>
+                </div>
+                <div class="field">
+                    <label for="confirm_password">Confirm new password</label>
+                    <input type="password" name="confirm_password" id="confirm_password" minlength="8" autocomplete="new-password" required>
+                </div>
+            </div>
+            <button type="submit" class="btn">Change password</button>
+        </form>
+
+        <form class="panel wide danger-zone" action="/profile/delete" method="POST" data-confirm="Delete your account? Your screenings and format reports will be deleted too. This can't be undone.">
+            <h2>Delete account</h2>
+            <p class="hint">This removes your account along with every screening and format report you added.</p>
+            ${err("delete")}
+            <div class="field">
+                <label for="delete_password">Enter your password to confirm</label>
+                <input type="password" name="password" id="delete_password" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn btn-danger">Delete my account</button>
+        </form>`;
+  return layout({ title: "Profile", user, active: "profile", body });
+}
+
 // Shown when someone tries to change a row that belongs to another user.
 // back = { href, label } for the link underneath; defaults to the screenings list.
 function forbiddenPage(user, text, back) {
@@ -467,4 +551,4 @@ function notFoundPage(user) {
   return layout({ title: "Not found", user, active: "", body });
 }
 
-module.exports = { FORMATS, EVENT_TYPES, escapeHtml, layout, homePage, aboutPage, loginPage, registerPage, screeningsPage, screeningFormPage, reportsPage, reportFormPage, forbiddenPage, comingSoonPage, notFoundPage };
+module.exports = { FORMATS, EVENT_TYPES, escapeHtml, layout, homePage, aboutPage, loginPage, registerPage, screeningsPage, screeningFormPage, reportsPage, reportFormPage, profilePage, forbiddenPage, comingSoonPage, notFoundPage };
