@@ -8,6 +8,7 @@ const cookieParser = require("cookie-parser");
 const bcrypt = require("bcryptjs");
 const mysql = require("mysql2");
 const views = require("./views");
+const geocode = require("./geocode");
 
 // The session cookie is signed with a secret; stop early with a clear message if it's missing
 if (!process.env.SESSION_SECRET) {
@@ -44,7 +45,10 @@ const conn = mysql.createConnection({
 });
 conn.connect(function (err) {
   if (err) console.log("Couldnt connect to MySQL", err);
-  else console.log("Database connection established");
+  else {
+    console.log("Database connection established");
+    backfillTheaterCoordinates();   // look up any theater that has no coordinates yet
+  }
 });
 
 const SALT_ROUNDS = 12; // bcrypt cost: higher is slower to guess; the salt is stored inside the hash
@@ -174,7 +178,8 @@ app.get("/logout", function (req, res) {
 // Four small forms, each with its own route. Every one works on req.session.user.user_id only,
 // so a person can never change someone else's account, whatever the form contains.
 const PROFILE_NOTICES = {
-  account: "Account saved.", location: "Location saved.", password: "Password changed."
+  account: "Account saved.", location: "Location saved.", password: "Password changed.",
+  locationnocoords: "Saved, but the ZIP lookup failed. Try again shortly."
 };
 
 // Loads the current user's row, then calls done(row). Redirects to login if the account no longer exists.
@@ -240,17 +245,21 @@ app.post("/profile/location", requireLogin, function (req, res) {
     if (!/^\d+$/.test(location.max_travel_radius_mi) || +location.max_travel_radius_mi < 1 || +location.max_travel_radius_mi > 500)
       return fail("Travel radius must be a whole number from 1 to 500.");
 
-    // The saved coordinates belonged to the old ZIP, so they are cleared whenever the ZIP is saved
-    // (the "near me" step fills them in again from the new ZIP).
+    // Coordinates are looked up once from the ZIP and stored, so "Near me" never has to look anything up.
+    // If the lookup fails the ZIP is still saved (coordinates null) and the person is told.
     const zip = location.home_zip === "" ? null : location.home_zip;
-    conn.query("update users set home_zip = ?, latitude = null, longitude = null, max_travel_radius_mi = ? where user_id = ?",
-      [zip, Number(location.max_travel_radius_mi), req.session.user.user_id], function (err) {
-        if (err) {
-          console.log("Error updating location", err);
-          return fail("Something went wrong. Please try again.", 500);
-        }
-        res.redirect("/profile?saved=location");
-      });
+    const save = function (point) {
+      conn.query("update users set home_zip = ?, latitude = ?, longitude = ?, max_travel_radius_mi = ? where user_id = ?",
+        [zip, point ? point.lat : null, point ? point.lng : null, Number(location.max_travel_radius_mi), req.session.user.user_id], function (err) {
+          if (err) {
+            console.log("Error updating location", err);
+            return fail("Something went wrong. Please try again.", 500);
+          }
+          res.redirect("/profile?saved=" + (zip && !point ? "locationnocoords" : "location"));
+        });
+    };
+    if (zip === null) return save(null);
+    geocode.geocodeZip(zip).then(save, function () { save(null); });
   });
 });
 
@@ -316,6 +325,32 @@ function sendForm(res, builder, user, options, status) {
   });
 }
 
+// Looks up a theater's coordinates in the background and saves them. The form never waits for this:
+// if the lookup fails the theater simply stays without coordinates (and is retried when the server restarts).
+function saveTheaterPoint(theaterId, place, done) {
+  geocode.geocodeTheater(place).then(function (point) {
+    if (!point) return done && done();
+    conn.query("update theaters set latitude = ?, longitude = ? where theater_id = ? and latitude is null",
+      [point.lat, point.lng, theaterId], function (err) {
+        if (err) console.log("Error saving theater coordinates", err);
+        if (done) done();
+      });
+  }, function () { if (done) done(); });
+}
+
+// On startup, gives every theater that has no coordinates a lookup, one at a time with a short pause.
+function backfillTheaterCoordinates() {
+  conn.query("select theater_id, address, city, state, zip from theaters where latitude is null or longitude is null", function (err, rows) {
+    if (err || !Array.isArray(rows) || rows.length === 0) return;
+    let i = 0;
+    (function next() {
+      if (i >= rows.length) return;
+      const t = rows[i++];
+      saveTheaterPoint(t.theater_id, t, function () { setTimeout(next, 250); });
+    })();
+  });
+}
+
 // Works out which theater a form chose. Calls done(errorMessage, theaterId); errorMessage is null when it worked.
 //   - "new theater" fields filled in -> validate them, then reuse a theater with the same name + city or create one
 //   - otherwise the dropdown value must be the id of an existing theater
@@ -349,7 +384,10 @@ function resolveTheater(body, userId, done) {
   };
   conn.query("insert into theaters (name, address, city, state, zip, created_by) values (?,?,?,?,?,?)",
     [name, address || null, city, state || null, zip || null, userId], function (err, result) {
-      if (!err) return done(null, result.insertId);
+      if (!err) {
+        saveTheaterPoint(result.insertId, { address, city, state, zip });   // not awaited
+        return done(null, result.insertId);
+      }
       if (err.code === "ER_DUP_ENTRY") return find();   // already exists: use it instead of making a duplicate
       console.log("Error inserting theater", err);
       done("Something went wrong. Please try again.");
@@ -365,26 +403,69 @@ function newTheaterValues(body) {
 
 // ---------- Screenings (first CRUD area) ----------
 
-// ---- Screenings: list (Read) ----
+// ---- Screenings: list (Read), with filters and "Near me" ----
+// Query string: ?format=70mm&event=Anniversary&near=1&miles=25. Everything is optional, and anything that isn't
+// one of the known values is ignored. The filters are read-only (a GET), so they need no special protection beyond validation.
 app.get("/screenings", requireLogin, function (req, res) {
-  // join users (who added it) and theaters (where it is shown)
-  const sql = `select s.screening_id, s.movie_title, t.name as theater_name, t.city, s.show_date, s.show_time,
-                      s.screen_format, s.event_type, s.user_id, u.username
+  const q = req.query || {};
+  const filters = {
+    format: views.FORMATS.includes(q.format) ? q.format : "",
+    event: views.EVENT_TYPES.includes(q.event) ? q.event : "",
+    near: q.near === "1",
+    miles: typeof q.miles === "string" && /^\d+$/.test(q.miles) && +q.miles >= 1 && +q.miles <= 500 ? Number(q.miles) : null
+  };
+
+  // The person's saved home location (looked up when they saved their Profile)
+  conn.query("select home_zip, latitude, longitude, max_travel_radius_mi from users where user_id = ?", [req.session.user.user_id], function (uerr, urows) {
+    const u = (!uerr && Array.isArray(urows) && urows[0]) || {};
+    const hasPoint = u.latitude !== null && u.latitude !== undefined && u.longitude !== null && u.longitude !== undefined;
+    const home = { zip: u.home_zip || "", hasPoint, miles: Number(u.max_travel_radius_mi) || 25 };
+    if (filters.miles === null) filters.miles = home.miles;
+
+    const nearOn = filters.near && hasPoint;
+    const where = [];
+    const selectParams = [], whereParams = [], outerParams = [];
+    let distance = "";
+
+    if (nearOn) {
+      // Haversine formula: distance in miles between the home point and the theater (earth radius 3958.8 mi).
+      // least(1, ...) guards against tiny rounding errors that would otherwise give NULL.
+      distance = `, 3958.8 * 2 * asin(least(1, sqrt(pow(sin(radians(t.latitude - ?) / 2), 2)
+                    + cos(radians(?)) * cos(radians(t.latitude)) * pow(sin(radians(t.longitude - ?) / 2), 2)))) as distance_mi`;
+      selectParams.push(Number(u.latitude), Number(u.latitude), Number(u.longitude));
+      where.push("t.latitude is not null and t.longitude is not null");   // theaters with no known location can't be placed
+      outerParams.push(filters.miles);
+    }
+    if (filters.format) { where.push("s.screen_format = ?"); whereParams.push(filters.format); }
+    if (filters.event) { where.push("s.event_type = ?"); whereParams.push(filters.event); }
+
+    // join users (who added it) and theaters (where it is shown)
+    let sql = `select s.screening_id, s.movie_title, t.name as theater_name, t.city, s.show_date, s.show_time,
+                      s.screen_format, s.event_type, s.user_id, u.username${distance}
                from screenings s
                join users u on u.user_id = s.user_id
-               join theaters t on t.theater_id = s.theater_id
-               order by s.show_date, s.show_time`;
-  conn.query(sql, function (err, rows) {
-    if (err) {
-      console.log("Screenings query error", err);
-      return res.status(500).send(views.comingSoonPage(req.session.user, "Screenings", "screenings", "Something went wrong loading screenings."));
-    }
-    // ?added=1 only selects a fixed message, never user text
-    let notice;
-    if (req.query.added) notice = "Screening added.";
-    if (req.query.updated) notice = "Screening updated.";
-    if (req.query.deleted) notice = "Screening deleted.";
-    res.send(views.screeningsPage(req.session.user, { rows, notice }));
+               join theaters t on t.theater_id = s.theater_id`
+             + (where.length ? " where " + where.join(" and ") : "");
+    // Near me: the distance is a computed column, so the radius is applied to the finished rows and the nearest come first
+    sql = nearOn
+      ? "select * from (" + sql + ") as nearby where distance_mi <= ? order by distance_mi, show_date, show_time"
+      : sql + " order by s.show_date, s.show_time";
+
+    conn.query(sql, selectParams.concat(whereParams, outerParams), function (err, rows) {
+      if (err) {
+        console.log("Screenings query error", err);
+        return res.status(500).send(views.comingSoonPage(req.session.user, "Screenings", "screenings", "Something went wrong loading screenings."));
+      }
+      // ?added=1 only selects a fixed message, never user text
+      let notice;
+      if (req.query.added) notice = "Screening added.";
+      if (req.query.updated) notice = "Screening updated.";
+      if (req.query.deleted) notice = "Screening deleted.";
+      res.send(views.screeningsPage(req.session.user, {
+        rows, notice, filters, home,
+        nearUnavailable: filters.near && !hasPoint   // asked for Near me but no home location saved
+      }));
+    });
   });
 });
 

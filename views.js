@@ -265,15 +265,57 @@ function theaterPicker(theaters, v) {
 
 // ---------- Screenings ----------
 
-// List of all screenings. options: { rows, notice }
+// List of all screenings. options: { rows, notice, filters, home, nearUnavailable }
+//   filters: { format, event, near, miles }   home: { zip, hasPoint, miles }
 // Every logged-in user sees every row, but Edit and Delete buttons only appear on rows the
 // current user added. (The server checks ownership again, so hiding buttons is just convenience.)
 function screeningsPage(user, options) {
   const o = options || {};
   const rows = o.rows || [];
+  const f = o.filters || {};
+  const home = o.home || {};
+  const filtering = Boolean(f.format || f.event || (f.near && home.hasPoint));
+
+  const formatOptions = FORMATS
+    .map(function (x) { return `<option value="${escapeHtml(x)}"${x === f.format ? " selected" : ""}>${escapeHtml(x)}</option>`; })
+    .join("");
+  const eventOptions = EVENT_TYPES
+    .map(function (x) { return `<option value="${escapeHtml(x)}"${x === f.event ? " selected" : ""}>${escapeHtml(x)}</option>`; })
+    .join("");
+  const miles = Number(f.miles) || home.miles || 25;
+  const where = home.zip ? `of ZIP ${escapeHtml(home.zip)}` : `of your home ZIP (<a href="/profile">set it on your profile</a>)`;
+
+  const filterForm = `        <form class="filters" action="/screenings" method="GET">
+            <div class="field">
+                <label for="f_format">Format</label>
+                <select name="format" id="f_format">
+                    <option value="">All formats</option>
+                    ${formatOptions}
+                </select>
+            </div>
+            <div class="field">
+                <label for="f_event">Event type</label>
+                <select name="event" id="f_event">
+                    <option value="">All types</option>
+                    ${eventOptions}
+                </select>
+            </div>
+            <div class="near">
+                <label for="f_near" class="check"><input type="checkbox" name="near" id="f_near" value="1"${f.near ? " checked" : ""}> Near me</label>
+                <span class="within">within <input type="number" name="miles" id="f_miles" value="${miles}" min="1" max="500" step="1" aria-label="Miles"> miles ${where}</span>
+            </div>
+            <div class="filter-actions">
+                <button type="submit" class="btn btn-small">Apply</button>
+                <a class="btn btn-quiet btn-small" href="/screenings">Clear</a>
+            </div>
+        </form>`;
+
+  const empty = filtering
+    ? `<p>No screenings match those filters. <a href="/screenings">Clear the filters.</a></p>`
+    : `<p>No screenings yet. <a href="/screenings/new">Add the first one.</a></p>`;
 
   const table = rows.length === 0
-    ? `<p>No screenings yet. <a href="/screenings/new">Add the first one.</a></p>`
+    ? empty
     : `<div class="table-wrap">
             <table class="data">
                 <thead>
@@ -283,6 +325,7 @@ function screeningsPage(user, options) {
 ${rows.map(function (r) {
   const note = `<div class="note">${escapeHtml(r.event_type)}</div>`;   // grey event-type line under the title
   const mine = Number(r.user_id) === Number(user.user_id);
+  const away = r.distance_mi === undefined || r.distance_mi === null ? "" : ` · ${Number(r.distance_mi).toFixed(1)} mi`;
   const actions = mine
     ? `<div class="row-actions">
                                 <a class="btn btn-quiet btn-small" href="/screenings/${Number(r.screening_id)}/edit">Edit</a>
@@ -295,7 +338,7 @@ ${rows.map(function (r) {
                         <td>${escapeHtml(formatDate(r.show_date))}</td>
                         <td>${escapeHtml(formatTime(r.show_time))}</td>
                         <td><strong>${escapeHtml(r.movie_title)}</strong>${note}</td>
-                        <td>${escapeHtml(r.theater_name)}<div class="note">${escapeHtml(r.city)}</div></td>
+                        <td>${escapeHtml(r.theater_name)}<div class="note">${escapeHtml(r.city)}${away}</div></td>
                         <td>${escapeHtml(r.screen_format)}</td>
                         <td>${escapeHtml(r.username)}</td>
                         <td>${actions}</td>
@@ -310,6 +353,9 @@ ${rows.map(function (r) {
             <a class="btn" href="/screenings/new">Add a screening</a>
         </div>
         ${o.notice ? `<p class="notice">${escapeHtml(o.notice)}</p>` : ""}
+${filterForm}
+        ${o.nearUnavailable ? `<p class="notice">Near me needs your home ZIP. <a href="/profile">Set it on your profile</a>, then try again.</p>` : ""}
+        ${filtering ? `<p class="sub count">${rows.length} ${rows.length === 1 ? "screening" : "screenings"} found${f.near && home.hasPoint ? ", nearest first. Theaters without a known location are left out." : "."}</p>` : ""}
         ${table}`;
   return layout({ title: "Screenings", user, active: "screenings", body });
 }
