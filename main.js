@@ -10,6 +10,7 @@ const mysql = require("mysql2");
 const views = require("./views");
 const geocode = require("./geocode");
 const rereleases = require("./rereleases");
+const fathom = require("./fathom");
 
 // The session cookie is signed with a secret; stop early with a clear message if it's missing
 if (!process.env.SESSION_SECRET) {
@@ -412,11 +413,10 @@ const dbQuery = function (sql, params) {
   });
 };
 
-let refreshingRereleases = false;
-async function refreshRereleases() {
+// TMDB part: older films with a US theatrical date coming up. Skipped when there is no token.
+async function refreshTmdb() {
   const token = process.env.TMDB_READ_TOKEN;
-  if (!token || refreshingRereleases) return;
-  refreshingRereleases = true;
+  if (!token) return;
   try {
     const result = await rereleases.findRereleases(token);
     for (const f of result.items) {
@@ -430,9 +430,40 @@ async function refreshRereleases() {
       if (ids.length) await dbQuery("delete from rerelease_candidates where tmdb_id not in (?)", [ids]);
       else await dbQuery("delete from rerelease_candidates");
     }
-    console.log("Re-Release Radar: " + result.items.length + " film(s)" + (result.ok ? "" : " (some lookups failed)"));
+    console.log("Re-Release Radar (TMDB): " + result.items.length + " film(s)" + (result.ok ? "" : " (some lookups failed)"));
   } catch (e) {
-    console.log("Re-Release Radar error", e && e.message ? e.message : e);
+    console.log("Re-Release Radar (TMDB) error", e && e.message ? e.message : e);
+  }
+}
+
+// Fathom part: special showings from Fathom Events' public series pages. Needs no token.
+async function refreshFathom() {
+  try {
+    const result = await fathom.findFathomEvents();
+    result.warnings.forEach(function (w) { console.log("Re-Release Radar (Fathom) warning:", w); });
+    for (const f of result.items) {
+      await dbQuery("replace into fathom_releases (slug, title, movie, label, series, url, poster_url, dates, last_date) values (?,?,?,?,?,?,?,?,?)",
+        [f.slug, f.title, f.movie, f.label, f.series, f.url, f.poster_url, f.dates.join(","), f.dates[f.dates.length - 1]]);
+    }
+    // Clean out showings that are no longer listed, but only after a complete read that found something.
+    // (If a page layout change makes the reader find nothing, the old rows are kept; they drop off the page by date.)
+    if (result.ok && result.items.length > 0) {
+      const slugs = result.items.map(function (f) { return f.slug; });
+      await dbQuery("delete from fathom_releases where slug not in (?)", [slugs]);
+    }
+    console.log("Re-Release Radar (Fathom): " + result.items.length + " showing(s)" + (result.ok ? "" : " (some pages could not be read)"));
+  } catch (e) {
+    console.log("Re-Release Radar (Fathom) error", e && e.message ? e.message : e);
+  }
+}
+
+let refreshingRereleases = false;
+async function refreshRereleases() {
+  if (refreshingRereleases) return;
+  refreshingRereleases = true;
+  try {
+    await refreshTmdb();
+    await refreshFathom();
   } finally {
     refreshingRereleases = false;
   }
@@ -440,8 +471,7 @@ async function refreshRereleases() {
 
 function startRereleaseRadar() {
   if (!process.env.TMDB_READ_TOKEN) {
-    console.log("Re-Release Radar is off: add TMDB_READ_TOKEN to .env to turn it on.");
-    return;
+    console.log("Re-Release Radar: TMDB is off (add TMDB_READ_TOKEN to .env to turn it on). Fathom listings still load.");
   }
   setTimeout(refreshRereleases, 3000).unref();                       // shortly after startup
   setInterval(refreshRereleases, 24 * 60 * 60 * 1000).unref();       // then once a day
@@ -454,15 +484,19 @@ app.get("/rereleases", requireLogin, function (req, res) {
     console.log("Re-release page error", err);
     res.status(500).send(views.forbiddenPage(user, "Something went wrong loading re-releases.", { href: "/", label: "Back to home" }));
   };
-  conn.query("select tmdb_id, title, original_date, rerelease_date, note, poster_path from rerelease_candidates where rerelease_date >= curdate() order by rerelease_date, title", function (err, rows) {
+  conn.query("select tmdb_id, title, original_date, rerelease_date, note, poster_path, fetched_at from rerelease_candidates where rerelease_date >= curdate() order by rerelease_date, title", function (err, tmdbRows) {
     if (err) return fail(err);
-    conn.query("select max(fetched_at) as updated from rerelease_candidates", function (err2, meta) {
-      if (err2) return fail(err2);
+    // A showing stays listed until its LAST date has passed (the Fathom table keeps every date of a run)
+    conn.query("select slug, title, movie, label, series, url, poster_url, dates, last_date, fetched_at from fathom_releases where last_date >= curdate() order by last_date, title", function (errF, fathomRows) {
+      // The Fathom table is an extra: if it is missing or fails, the page still shows the TMDB list
+      if (errF) { console.log("Fathom list error", errF.message || errF); fathomRows = []; }
       conn.query("select home_zip from users where user_id = ?", [user.user_id], function (err3, urows) {
         const zip = !err3 && Array.isArray(urows) && urows[0] && urows[0].home_zip ? urows[0].home_zip : "";
+        const stamps = tmdbRows.concat(fathomRows).map(function (r) { return String(r.fetched_at || ""); }).filter(Boolean).sort();
+        const now = new Date();
+        const today = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0");
         res.send(views.rereleasesPage(user, {
-          rows, zip, configured: Boolean(process.env.TMDB_READ_TOKEN),
-          updated: Array.isArray(meta) && meta[0] ? meta[0].updated : null
+          rows: fathom.mergeRereleases(tmdbRows, fathomRows, today), zip, updated: stamps.length ? stamps[stamps.length - 1] : null
         }));
       });
     });
@@ -544,7 +578,10 @@ app.get("/screenings/new", requireLogin, function (req, res) {
   // and the form is only filled in, never saved, until the person presses the button.
   const q = req.query || {};
   const values = {};
-  if (typeof q.movie === "string" && q.movie.trim()) { values.movie_title = q.movie.trim().slice(0, 150); values.event_type = "Re-release"; }
+  if (typeof q.movie === "string" && q.movie.trim()) {
+    values.movie_title = q.movie.trim().slice(0, 150);
+    values.event_type = views.EVENT_TYPES.includes(q.event) ? q.event : "Re-release";   // the radar can suggest "Anniversary"
+  }
   if (typeof q.date === "string" && isRealDate(q.date)) values.show_date = q.date;
   sendForm(res, views.screeningFormPage, req.session.user, {
     title: "Add a screening", action: "/screenings", submitText: "Add screening", values

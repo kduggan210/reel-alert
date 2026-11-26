@@ -122,3 +122,22 @@ CREATE TABLE IF NOT EXISTS rerelease_candidates (
   PRIMARY KEY (tmdb_id),
   KEY idx_rerelease_date (rerelease_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---- fathom_releases ----
+-- A cache of special showings read from Fathom Events' public series pages by the same daily job (fathom.js).
+-- Fathom's pages give a title and dates but no year or film id, so the key is the page name ("slug").
+-- Nobody edits these rows; the job replaces them once a day. Safe to run on an existing database (nothing is dropped).
+CREATE TABLE IF NOT EXISTS fathom_releases (
+  slug        VARCHAR(120) NOT NULL,
+  title       VARCHAR(200) NOT NULL,
+  movie       VARCHAR(150) NOT NULL,
+  label       VARCHAR(40)  NULL,
+  series      VARCHAR(80)  NOT NULL,
+  url         VARCHAR(300) NOT NULL,
+  poster_url  VARCHAR(300) NULL,
+  dates       VARCHAR(400) NOT NULL,
+  last_date   DATE NOT NULL,
+  fetched_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (slug),
+  KEY idx_fathom_last (last_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

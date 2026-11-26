@@ -13,8 +13,8 @@
 const API = "https://api.themoviedb.org/3";
 const WINDOW_DAYS = 90;      // how far ahead to look
 const MIN_AGE_DAYS = 730;    // original theatrical release must be at least this old (about two years)
-const MIN_VOTES = 300;       // only films with at least this many TMDB votes
-const MAX_PAGES = 3;         // discover pages to read (20 films per page)
+const MIN_VOTES = 100;       // only films with at least this many TMDB votes (lower finds more, but more small films too)
+const MAX_PAGES = 5;         // discover pages to read (20 films per page)
 const PAUSE_MS = 150;        // pause between requests so TMDB is never hammered
 const TIMEOUT_MS = 8000;
 

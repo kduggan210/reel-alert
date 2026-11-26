@@ -172,7 +172,7 @@ function aboutPage(user) {
         </section>
         <section>
             <h2>Credits</h2>
-            <p>Re-release information on the Re-releases page comes from <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">TMDB</a>. This product uses the TMDB API but is not endorsed or certified by TMDB. Theater locations use data from the U.S. Census Bureau and Zippopotam.us.</p>
+            <p>Re-release information on the Re-releases page comes from <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">TMDB</a> and from the public listings of <a href="https://www.fathomentertainment.com/" target="_blank" rel="noopener noreferrer">Fathom Events</a>. This product uses the TMDB API but is not endorsed or certified by TMDB. Theater locations use data from the U.S. Census Bureau and Zippopotam.us.</p>
         </section>`;
   return layout({ title: "About", user, active: "about", body });
 }
@@ -530,35 +530,49 @@ ${theaterPicker(o.theaters, v)}
 
 // ---------- Re-release radar ----------
 
-// Older films returning to US theaters. options: { rows, zip, configured, updated }
+// Older films and special events returning to US theaters. options: { rows, zip, updated }
+// rows come from mergeRereleases() in fathom.js: { title, year, date, moreDates, note, poster, addMovie, addEvent, infoUrl, source }
 // This is a heads-up, not a showtime list: it says a re-release is coming, and each row links to
-// "Find showtimes" (a web search) and "Add a screening" (the add form, pre-filled with the film and date).
+// "Find showtimes" (a web search) and "Add a screening" (the add form, pre-filled with the film, date and event type).
+
+// '2026-12-09' -> 'Dec 9'
+function shortDate(s) {
+  const parts = String(s).split("-").map(Number);
+  return new Date(parts[0], parts[1] - 1, parts[2]).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 function rereleasesPage(user, options) {
   const o = options || {};
   const rows = o.rows || [];
 
   const list = rows.length === 0
-    ? `<p>${o.configured
-        ? "No re-releases found yet. The list refreshes about once a day, so check back soon."
-        : "The re-release radar isn't set up yet. The site's owner needs to add a TMDB token to turn it on."}</p>`
+    ? `<p>No re-releases found yet. The list refreshes about once a day, so check back soon.</p>`
     : `<ul class="rr-list">
 ${rows.map(function (r) {
   const title = String(r.title);
-  const year = String(r.original_date).slice(0, 4);
-  const addUrl = "/screenings/new?movie=" + encodeURIComponent(title) + "&date=" + encodeURIComponent(String(r.rerelease_date).slice(0, 10));
-  const searchUrl = "https://www.google.com/search?q=" + encodeURIComponent((title + " " + year + " showtimes " + (o.zip || "")).trim());
-  const poster = r.poster_path
-    ? `<img class="rr-poster" src="https://image.tmdb.org/t/p/w185${escapeHtml(r.poster_path)}" alt="Poster for ${escapeHtml(title)}" width="92" height="138" loading="lazy">`
+  const addUrl = "/screenings/new?movie=" + encodeURIComponent(r.addMovie || title) + "&date=" + encodeURIComponent(String(r.date).slice(0, 10))
+               + (EVENT_TYPES.includes(r.addEvent) ? "&event=" + encodeURIComponent(r.addEvent) : "");
+  const searchUrl = "https://www.google.com/search?q=" + encodeURIComponent((title + (r.year ? " " + r.year : "") + " showtimes " + (o.zip || "")).replace(/\s+/g, " ").trim());
+  const also = (r.moreDates || []).length
+    ? `<p class="note">Also ${(r.moreDates).slice(0, 5).map(function (d) { return escapeHtml(shortDate(d)); }).join(", ")}${r.moreDates.length > 5 ? ` and ${r.moreDates.length - 5} more` : ""}</p>`
+    : "";
+  const poster = r.poster
+    ? `<img class="rr-poster" src="${escapeHtml(r.poster)}" alt="Poster for ${escapeHtml(title)}" width="92" height="138" loading="lazy">`
     : `<div class="rr-poster rr-none" aria-hidden="true"></div>`;
+  const details = r.infoUrl
+    ? `<a class="btn btn-quiet btn-small" href="${escapeHtml(r.infoUrl)}" target="_blank" rel="noopener noreferrer">Details and tickets</a>`
+    : "";
   return `            <li class="rr-item">
                 ${poster}
                 <div class="rr-body">
-                    <h2>${escapeHtml(title)} <span class="rr-year">(${escapeHtml(year)})</span></h2>
-                    <p class="rr-when">Returns ${escapeHtml(formatDate(r.rerelease_date))}</p>
+                    <h2>${escapeHtml(title)}${r.year ? ` <span class="rr-year">(${escapeHtml(r.year)})</span>` : ""}</h2>
+                    <p class="rr-when">Returns ${escapeHtml(formatDate(r.date))}</p>
+                    ${also}
                     ${r.note ? `<p class="note">${escapeHtml(r.note)}</p>` : ""}
                     <div class="row-actions">
                         <a class="btn btn-small" href="${escapeHtml(addUrl)}">Add a screening</a>
                         <a class="btn btn-quiet btn-small" href="${escapeHtml(searchUrl)}" target="_blank" rel="noopener noreferrer">Find showtimes</a>
+                        ${details}
                     </div>
                 </div>
             </li>`;
@@ -568,10 +582,10 @@ ${rows.map(function (r) {
   const body = `        <div class="page-head">
             <h1>Re-Release Radar</h1>
         </div>
-        <p class="sub">Older films returning to US theaters in the next three months. Find a showing near you, then add it to the Screenings list.</p>
+        <p class="sub">Older films and special events returning to US theaters in the next three months. Find a showing near you, then add it to the Screenings list.</p>
         ${o.updated ? `<p class="sub count">Last updated ${escapeHtml(formatDate(String(o.updated).slice(0, 10)))}.</p>` : ""}
         ${list}
-        <p class="credit">This product uses the TMDB API but is not endorsed or certified by TMDB. <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">themoviedb.org</a></p>`;
+        <p class="credit">This product uses the TMDB API but is not endorsed or certified by TMDB (<a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">themoviedb.org</a>). Event dates also come from <a href="https://www.fathomentertainment.com/" target="_blank" rel="noopener noreferrer">Fathom Events</a>, which is not affiliated with this site.</p>`;
   return layout({ title: "Re-Release Radar", user, active: "rereleases", body });
 }
 
