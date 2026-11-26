@@ -43,7 +43,7 @@ const NAV_LOGGED_OUT = [
 const NAV_LOGGED_IN = [
   { key: "home", href: "/", text: "Home" },
   { key: "screenings", href: "/screenings", text: "Screenings" },
-  { key: "reports", href: "/reports", text: "Format reports" },
+  { key: "reports", href: "/reports", text: "Format Reports" },
   { key: "profile", href: "/profile", text: "Profile" },
   { key: "about", href: "/about", text: "About" }
 ];
@@ -116,7 +116,7 @@ function homePage(user) {
             <p class="lede">Browse upcoming special screenings, or add one you've spotted.</p>
             <div class="actions">
                 <a class="btn" href="/screenings">Screenings</a>
-                <a class="btn btn-quiet" href="/reports">Format reports</a>
+                <a class="btn btn-quiet" href="/reports">Format Reports</a>
             </div>
         </section>`
     : `<section class="hero">
@@ -218,6 +218,51 @@ function registerPage(user, options) {
   return layout({ title: "Register", user, active: "register", body });
 }
 
+// ---------- Theater picker (used on the screening and report forms) ----------
+// A dropdown of existing theaters, plus a "Theater not listed?" section for adding a new one.
+// The new-theater section opens by itself when something was typed in it, so a failed submit doesn't hide it.
+function theaterPicker(theaters, v) {
+  const options = (theaters || [])
+    .map(function (t) {
+      return `<option value="${Number(t.theater_id)}"${String(t.theater_id) === String(v.theater_id) ? " selected" : ""}>${escapeHtml(t.name)}, ${escapeHtml(t.city)}</option>`;
+    })
+    .join("");
+  const typedNew = [v.new_theater_name, v.new_theater_address, v.new_theater_city, v.new_theater_state, v.new_theater_zip].some(Boolean);
+  return `            <div class="field">
+                <label for="theater_id">Theater</label>
+                <select name="theater_id" id="theater_id">
+                    <option value="">Choose a theater</option>
+                    ${options}
+                </select>
+            </div>
+            <details class="new-theater"${typedNew ? " open" : ""}>
+                <summary>Theater not listed? Add it</summary>
+                <p class="hint">If you fill in a name here, it is used instead of the dropdown. A theater that already exists with the same name and city is reused.</p>
+                <div class="field">
+                    <label for="new_theater_name">Theater name</label>
+                    <input type="text" name="new_theater_name" id="new_theater_name" value="${escapeHtml(v.new_theater_name || "")}" maxlength="100">
+                </div>
+                <div class="field">
+                    <label for="new_theater_address">Street address (optional)</label>
+                    <input type="text" name="new_theater_address" id="new_theater_address" value="${escapeHtml(v.new_theater_address || "")}" maxlength="150" autocomplete="off">
+                </div>
+                <div class="field-row three">
+                    <div class="field">
+                        <label for="new_theater_city">City</label>
+                        <input type="text" name="new_theater_city" id="new_theater_city" value="${escapeHtml(v.new_theater_city || "")}" maxlength="80">
+                    </div>
+                    <div class="field">
+                        <label for="new_theater_state">State</label>
+                        <input type="text" name="new_theater_state" id="new_theater_state" value="${escapeHtml(v.new_theater_state || "")}" maxlength="2" placeholder="GA">
+                    </div>
+                    <div class="field">
+                        <label for="new_theater_zip">ZIP</label>
+                        <input type="text" name="new_theater_zip" id="new_theater_zip" value="${escapeHtml(v.new_theater_zip || "")}" maxlength="5" inputmode="numeric" pattern="[0-9]{5}">
+                    </div>
+                </div>
+            </details>`;
+}
+
 // ---------- Screenings ----------
 
 // List of all screenings. options: { rows, notice }
@@ -288,14 +333,7 @@ function screeningFormPage(user, options) {
                 <label for="movie_title">Movie</label>
                 <input type="text" name="movie_title" id="movie_title" value="${escapeHtml(v.movie_title || "")}" maxlength="150" required>
             </div>
-            <div class="field">
-                <label for="theater_name">Theater</label>
-                <input type="text" name="theater_name" id="theater_name" value="${escapeHtml(v.theater_name || "")}" maxlength="100" required>
-            </div>
-            <div class="field">
-                <label for="city">City</label>
-                <input type="text" name="city" id="city" value="${escapeHtml(v.city || "")}" maxlength="80" required>
-            </div>
+${theaterPicker(o.theaters, v)}
             <div class="field-row">
                 <div class="field">
                     <label for="show_date">Date</label>
@@ -361,7 +399,7 @@ ${rows.map(function (r) {
                             </div>`
     : "";
   return `                    <tr>
-                        <td><strong>${escapeHtml(r.theater_name)}</strong><div class="note">${escapeHtml(r.screen_name)}</div></td>
+                        <td><strong>${escapeHtml(r.theater_name)}</strong><div class="note">${escapeHtml(r.screen_name)} · ${escapeHtml(r.city)}</div></td>
                         <td>${escapeHtml(r.projection_type)}</td>
                         <td>${stars(r.picture_rating)}</td>
                         <td>${stars(r.sound_rating)}</td>
@@ -375,13 +413,13 @@ ${rows.map(function (r) {
         </div>`;
 
   const body = `        <div class="page-head">
-            <h1>Format reports</h1>
+            <h1>Format Reports</h1>
             <a class="btn" href="/reports/new">Add a report</a>
         </div>
         <p class="sub">How a screen actually looks and sounds, from people who have sat in it.</p>
         ${o.notice ? `<p class="notice">${escapeHtml(o.notice)}</p>` : ""}
         ${table}`;
-  return layout({ title: "Format reports", user, active: "reports", body });
+  return layout({ title: "Format Reports", user, active: "reports", body });
 }
 
 // Add/edit form for a report. options: { title, action, submitText, values, error }
@@ -400,15 +438,10 @@ function reportFormPage(user, options) {
   const body = `        <h1>${escapeHtml(o.title)}</h1>
         ${o.error ? `<p class="error" role="alert">${escapeHtml(o.error)}</p>` : ""}
         <form class="panel wide" action="${escapeHtml(o.action)}" method="POST">
-            <div class="field-row">
-                <div class="field">
-                    <label for="theater_name">Theater</label>
-                    <input type="text" name="theater_name" id="theater_name" value="${escapeHtml(v.theater_name || "")}" maxlength="100" required>
-                </div>
-                <div class="field">
-                    <label for="screen_name">Screen</label>
-                    <input type="text" name="screen_name" id="screen_name" value="${escapeHtml(v.screen_name || "")}" maxlength="50" placeholder="Screen 1" required>
-                </div>
+${theaterPicker(o.theaters, v)}
+            <div class="field">
+                <label for="screen_name">Screen</label>
+                <input type="text" name="screen_name" id="screen_name" value="${escapeHtml(v.screen_name || "")}" maxlength="50" placeholder="Screen 1" required>
             </div>
             <div class="field">
                 <label for="projection_type">Format</label>

@@ -264,3 +264,10 @@ p.sub { color: var(--muted); margin-top: -0.5rem; }
 .panel .hint { color: var(--muted); font-size: 0.9rem; margin-top: -0.4rem; }
 .panel.wide + .panel.wide { margin-top: 1.5rem; }
 .danger-zone { border-color: var(--red); }
+
+/* ---- Theater picker ---- */
+details.new-theater { margin: 0 0 1.1rem; padding: 0.75rem 1rem; border: 1px dashed var(--rule); border-radius: 6px; }
+details.new-theater summary { cursor: pointer; font-weight: 600; }
+details.new-theater[open] summary { margin-bottom: 0.75rem; }
+.field-row.three { grid-template-columns: 2fr 1fr 1fr; }
+@media (max-width: 600px) { .field-row.three { grid-template-columns: 1fr; } }

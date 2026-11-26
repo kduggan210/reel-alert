@@ -303,12 +303,76 @@ app.post("/profile/delete", requireLogin, function (req, res) {
   });
 });
 
+// ---------- Theaters (shared by screenings and format reports) ----------
+// A screening or report points at a theater row. On the add/edit forms the person either picks an existing
+// theater from the list or opens "Theater not listed?" and types a new one.
+
+// Loads the theater list for the picker, then renders a form page. Used for every add/edit form render.
+function sendForm(res, builder, user, options, status) {
+  conn.query("select theater_id, name, city from theaters order by name, city", function (err, theaters) {
+    if (err) { console.log("Theater list error", err); theaters = []; }
+    options.theaters = theaters;
+    res.status(status || 200).send(builder(user, options));
+  });
+}
+
+// Works out which theater a form chose. Calls done(errorMessage, theaterId); errorMessage is null when it worked.
+//   - "new theater" fields filled in -> validate them, then reuse a theater with the same name + city or create one
+//   - otherwise the dropdown value must be the id of an existing theater
+function resolveTheater(body, userId, done) {
+  const b = body || {};
+  const name = (b.new_theater_name || "").trim();
+
+  if (name === "") {
+    if (!/^\d+$/.test(String(b.theater_id || ""))) return done("Choose a theater, or add a new one.");
+    return conn.query("select theater_id from theaters where theater_id = ?", [b.theater_id], function (err, rows) {
+      if (err) { console.log("Theater lookup error", err); return done("Something went wrong. Please try again."); }
+      if (rows.length === 0) return done("That theater doesn't exist. Choose one from the list.");
+      done(null, rows[0].theater_id);
+    });
+  }
+
+  const city = (b.new_theater_city || "").trim();
+  const address = (b.new_theater_address || "").trim();
+  const state = (b.new_theater_state || "").trim().toUpperCase();
+  const zip = (b.new_theater_zip || "").trim();
+  if (!city) return done("A new theater needs a city.");
+  if (name.length > 100 || city.length > 80 || address.length > 150) return done("New theater name (max 100), city (max 80) or address (max 150) is too long.");
+  if (state !== "" && !/^[A-Z]{2}$/.test(state)) return done("State must be two letters, like GA.");
+  if (zip !== "" && !/^\d{5}$/.test(zip)) return done("Theater ZIP must be 5 digits.");
+
+  const find = function () {
+    conn.query("select theater_id from theaters where name = ? and city = ?", [name, city], function (err, rows) {
+      if (err || rows.length === 0) { console.log("Theater find error", err); return done("Something went wrong. Please try again."); }
+      done(null, rows[0].theater_id);
+    });
+  };
+  conn.query("insert into theaters (name, address, city, state, zip, created_by) values (?,?,?,?,?,?)",
+    [name, address || null, city, state || null, zip || null, userId], function (err, result) {
+      if (!err) return done(null, result.insertId);
+      if (err.code === "ER_DUP_ENTRY") return find();   // already exists: use it instead of making a duplicate
+      console.log("Error inserting theater", err);
+      done("Something went wrong. Please try again.");
+    });
+}
+
+// The typed "new theater" fields, put back into the form if something is wrong
+function newTheaterValues(body) {
+  const b = body || {};
+  return { new_theater_name: b.new_theater_name || "", new_theater_address: b.new_theater_address || "",
+           new_theater_city: b.new_theater_city || "", new_theater_state: b.new_theater_state || "", new_theater_zip: b.new_theater_zip || "" };
+}
+
+// ---------- Screenings (first CRUD area) ----------
+
 // ---- Screenings: list (Read) ----
 app.get("/screenings", requireLogin, function (req, res) {
-  // join users so each row can show who added it
-  const sql = `select s.screening_id, s.movie_title, s.theater_name, s.city, s.show_date, s.show_time,
+  // join users (who added it) and theaters (where it is shown)
+  const sql = `select s.screening_id, s.movie_title, t.name as theater_name, t.city, s.show_date, s.show_time,
                       s.screen_format, s.event_type, s.user_id, u.username
-               from screenings s join users u on u.user_id = s.user_id
+               from screenings s
+               join users u on u.user_id = s.user_id
+               join theaters t on t.theater_id = s.theater_id
                order by s.show_date, s.show_time`;
   conn.query(sql, function (err, rows) {
     if (err) {
@@ -325,29 +389,29 @@ app.get("/screenings", requireLogin, function (req, res) {
 });
 
 // ---- Screenings: add form ----
-// Must stay above any /screenings/:id route added later, or "new" would be read as an id.
+// Must stay above any /screenings/:id route, or "new" would be read as an id.
 app.get("/screenings/new", requireLogin, function (req, res) {
-  res.send(views.screeningFormPage(req.session.user, {
+  sendForm(res, views.screeningFormPage, req.session.user, {
     title: "Add a screening", action: "/screenings", submitText: "Add screening", values: {}
-  }));
+  });
 });
 
 // Checks the form data. Returns { values } with cleaned data, or { values, error } if something is wrong.
+// (The theater is checked separately by resolveTheater.)
 function readScreeningForm(body) {
   const b = body || {};
   const values = {
+    theater_id: (b.theater_id || "").trim(),
+    ...newTheaterValues(b),
     movie_title: (b.movie_title || "").trim(),
-    theater_name: (b.theater_name || "").trim(),
-    city: (b.city || "").trim(),
     show_date: (b.show_date || "").trim(),
     show_time: (b.show_time || "").trim(),
     screen_format: (b.screen_format || "").trim(),
     event_type: (b.event_type || "").trim()
   };
 
-  if (!values.movie_title || !values.theater_name || !values.city) return { values, error: "Movie, theater and city are required." };
-  if (values.movie_title.length > 150 || values.theater_name.length > 100 || values.city.length > 80)
-    return { values, error: "Movie (max 150), theater (max 100) or city (max 80) is too long." };
+  if (!values.movie_title) return { values, error: "Movie is required." };
+  if (values.movie_title.length > 150) return { values, error: "Movie title is too long (max 150)." };
 
   // Date must look like 2026-12-05 and be a real calendar day (rejects things like 2026-02-31)
   const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(values.show_date);
@@ -365,30 +429,30 @@ function readScreeningForm(body) {
 
 // ---- Screenings: create ----
 app.post("/screenings", requireLogin, function (req, res) {
+  const page = { title: "Add a screening", action: "/screenings", submitText: "Add screening" };
   const result = readScreeningForm(req.body);
   if (result.error) {
-    return res.status(400).send(views.screeningFormPage(req.session.user, {
-      title: "Add a screening", action: "/screenings", submitText: "Add screening",
-      values: result.values, error: result.error
-    }));
+    return sendForm(res, views.screeningFormPage, req.session.user, { ...page, values: result.values, error: result.error }, 400);
   }
 
   const v = result.values;
-  // The owner always comes from the session, never from the form, so nobody can add a row as someone else
-  const sql = `insert into screenings (user_id, movie_title, theater_name, city, show_date, show_time, screen_format, event_type)
-               values (?,?,?,?,?,?,?,?)`;
-  const params = [req.session.user.user_id, v.movie_title, v.theater_name, v.city, v.show_date, v.show_time, v.screen_format, v.event_type];
-  conn.query(sql, params, function (err) {
-    if (err) {
-      console.log("Error inserting screening", err);
-      return res.status(500).send(views.screeningFormPage(req.session.user, {
-        title: "Add a screening", action: "/screenings", submitText: "Add screening",
-        values: v, error: "Something went wrong. Please try again."
-      }));
-    }
-    res.redirect("/screenings?added=1");
+  resolveTheater(req.body, req.session.user.user_id, function (theaterError, theaterId) {
+    if (theaterError) return sendForm(res, views.screeningFormPage, req.session.user, { ...page, values: v, error: theaterError }, 400);
+
+    // The owner always comes from the session, never from the form, so nobody can add a row as someone else
+    const sql = `insert into screenings (user_id, theater_id, movie_title, show_date, show_time, screen_format, event_type)
+                 values (?,?,?,?,?,?,?)`;
+    const params = [req.session.user.user_id, theaterId, v.movie_title, v.show_date, v.show_time, v.screen_format, v.event_type];
+    conn.query(sql, params, function (err) {
+      if (err) {
+        console.log("Error inserting screening", err);
+        return sendForm(res, views.screeningFormPage, req.session.user, { ...page, values: v, error: "Something went wrong. Please try again." }, 500);
+      }
+      res.redirect("/screenings?added=1");
+    });
   });
 });
+
 // ---- Screenings: edit / update / delete ----
 // Finds the screening named in the URL and checks that the logged-in user owns it.
 //   - id isn't a number, or no such screening -> 404 page
@@ -415,38 +479,38 @@ function withOwnedScreening(req, res, done) {
 // Edit form, filled in with the current values
 app.get("/screenings/:id/edit", requireLogin, function (req, res) {
   withOwnedScreening(req, res, function (row) {
-    res.send(views.screeningFormPage(req.session.user, {
+    sendForm(res, views.screeningFormPage, req.session.user, {
       title: "Edit screening", action: "/screenings/" + row.screening_id, submitText: "Save changes", values: row
-    }));
+    });
   });
 });
 
 // Update: same checks as creating, then saves the changes
 app.post("/screenings/:id", requireLogin, function (req, res) {
   withOwnedScreening(req, res, function (row) {
+    const page = { title: "Edit screening", action: "/screenings/" + row.screening_id, submitText: "Save changes" };
     const result = readScreeningForm(req.body);
-    const action = "/screenings/" + row.screening_id;
     if (result.error) {
-      return res.status(400).send(views.screeningFormPage(req.session.user, {
-        title: "Edit screening", action, submitText: "Save changes", values: result.values, error: result.error
-      }));
+      return sendForm(res, views.screeningFormPage, req.session.user, { ...page, values: result.values, error: result.error }, 400);
     }
 
     const v = result.values;
-    // "and user_id = ?" repeats the ownership check inside the query itself. The owner is never taken from the form.
-    const sql = `update screenings set movie_title = ?, theater_name = ?, city = ?, show_date = ?, show_time = ?,
-                        screen_format = ?, event_type = ?
-                 where screening_id = ? and user_id = ?`;
-    const params = [v.movie_title, v.theater_name, v.city, v.show_date, v.show_time, v.screen_format, v.event_type,
-                    row.screening_id, req.session.user.user_id];
-    conn.query(sql, params, function (err) {
-      if (err) {
-        console.log("Error updating screening", err);
-        return res.status(500).send(views.screeningFormPage(req.session.user, {
-          title: "Edit screening", action, submitText: "Save changes", values: v, error: "Something went wrong. Please try again."
-        }));
-      }
-      res.redirect("/screenings?updated=1");
+    resolveTheater(req.body, req.session.user.user_id, function (theaterError, theaterId) {
+      if (theaterError) return sendForm(res, views.screeningFormPage, req.session.user, { ...page, values: v, error: theaterError }, 400);
+
+      // "and user_id = ?" repeats the ownership check inside the query itself. The owner is never taken from the form.
+      const sql = `update screenings set theater_id = ?, movie_title = ?, show_date = ?, show_time = ?,
+                          screen_format = ?, event_type = ?
+                   where screening_id = ? and user_id = ?`;
+      const params = [theaterId, v.movie_title, v.show_date, v.show_time, v.screen_format, v.event_type,
+                      row.screening_id, req.session.user.user_id];
+      conn.query(sql, params, function (err) {
+        if (err) {
+          console.log("Error updating screening", err);
+          return sendForm(res, views.screeningFormPage, req.session.user, { ...page, values: v, error: "Something went wrong. Please try again." }, 500);
+        }
+        res.redirect("/screenings?updated=1");
+      });
     });
   });
 });
@@ -471,10 +535,12 @@ const REPORTS_BACK = { href: "/reports", label: "Back to format reports" };
 
 // ---- Reports: list (Read) ----
 app.get("/reports", requireLogin, function (req, res) {
-  const sql = `select r.report_id, r.theater_name, r.screen_name, r.projection_type, r.picture_rating,
+  const sql = `select r.report_id, t.name as theater_name, t.city, r.screen_name, r.projection_type, r.picture_rating,
                       r.sound_rating, r.comment, r.user_id, u.username
-               from format_reports r join users u on u.user_id = r.user_id
-               order by r.theater_name, r.screen_name, r.report_id`;
+               from format_reports r
+               join users u on u.user_id = r.user_id
+               join theaters t on t.theater_id = r.theater_id
+               order by t.name, r.screen_name, r.report_id`;
   conn.query(sql, function (err, rows) {
     if (err) {
       console.log("Reports query error", err);
@@ -491,16 +557,17 @@ app.get("/reports", requireLogin, function (req, res) {
 
 // ---- Reports: add form (must stay above /reports/:id routes) ----
 app.get("/reports/new", requireLogin, function (req, res) {
-  res.send(views.reportFormPage(req.session.user, {
+  sendForm(res, views.reportFormPage, req.session.user, {
     title: "Add a format report", action: "/reports", submitText: "Add report", values: {}
-  }));
+  });
 });
 
 // Checks the form data. Returns { values } with cleaned data, or { values, error } if something is wrong.
 function readReportForm(body) {
   const b = body || {};
   const values = {
-    theater_name: (b.theater_name || "").trim(),
+    theater_id: (b.theater_id || "").trim(),
+    ...newTheaterValues(b),
     screen_name: (b.screen_name || "").trim(),
     projection_type: (b.projection_type || "").trim(),
     picture_rating: (b.picture_rating || "").trim(),
@@ -508,9 +575,8 @@ function readReportForm(body) {
     comment: (b.comment || "").trim()
   };
 
-  if (!values.theater_name || !values.screen_name) return { values, error: "Theater and screen are required." };
-  if (values.theater_name.length > 100 || values.screen_name.length > 50)
-    return { values, error: "Theater (max 100) or screen (max 50) is too long." };
+  if (!values.screen_name) return { values, error: "Screen is required." };
+  if (values.screen_name.length > 50) return { values, error: "Screen name is too long (max 50)." };
   if (!views.FORMATS.includes(values.projection_type)) return { values, error: "Choose one of the listed formats." };
   if (!/^[1-5]$/.test(values.picture_rating) || !/^[1-5]$/.test(values.sound_rating))
     return { values, error: "Ratings must be whole numbers from 1 to 5." };
@@ -521,29 +587,28 @@ function readReportForm(body) {
 
 // ---- Reports: create ----
 app.post("/reports", requireLogin, function (req, res) {
+  const page = { title: "Add a format report", action: "/reports", submitText: "Add report" };
   const result = readReportForm(req.body);
   if (result.error) {
-    return res.status(400).send(views.reportFormPage(req.session.user, {
-      title: "Add a format report", action: "/reports", submitText: "Add report",
-      values: result.values, error: result.error
-    }));
+    return sendForm(res, views.reportFormPage, req.session.user, { ...page, values: result.values, error: result.error }, 400);
   }
 
   const v = result.values;
-  // The owner always comes from the session, never from the form
-  const sql = `insert into format_reports (user_id, theater_name, screen_name, projection_type, picture_rating, sound_rating, comment)
-               values (?,?,?,?,?,?,?)`;
-  const params = [req.session.user.user_id, v.theater_name, v.screen_name, v.projection_type,
-                  Number(v.picture_rating), Number(v.sound_rating), v.comment === "" ? null : v.comment];
-  conn.query(sql, params, function (err) {
-    if (err) {
-      console.log("Error inserting report", err);
-      return res.status(500).send(views.reportFormPage(req.session.user, {
-        title: "Add a format report", action: "/reports", submitText: "Add report",
-        values: v, error: "Something went wrong. Please try again."
-      }));
-    }
-    res.redirect("/reports?added=1");
+  resolveTheater(req.body, req.session.user.user_id, function (theaterError, theaterId) {
+    if (theaterError) return sendForm(res, views.reportFormPage, req.session.user, { ...page, values: v, error: theaterError }, 400);
+
+    // The owner always comes from the session, never from the form
+    const sql = `insert into format_reports (user_id, theater_id, screen_name, projection_type, picture_rating, sound_rating, comment)
+                 values (?,?,?,?,?,?,?)`;
+    const params = [req.session.user.user_id, theaterId, v.screen_name, v.projection_type,
+                    Number(v.picture_rating), Number(v.sound_rating), v.comment === "" ? null : v.comment];
+    conn.query(sql, params, function (err) {
+      if (err) {
+        console.log("Error inserting report", err);
+        return sendForm(res, views.reportFormPage, req.session.user, { ...page, values: v, error: "Something went wrong. Please try again." }, 500);
+      }
+      res.redirect("/reports?added=1");
+    });
   });
 });
 
@@ -572,38 +637,38 @@ function withOwnedReport(req, res, done) {
 // ---- Reports: edit form, filled in with the current values ----
 app.get("/reports/:id/edit", requireLogin, function (req, res) {
   withOwnedReport(req, res, function (row) {
-    res.send(views.reportFormPage(req.session.user, {
+    sendForm(res, views.reportFormPage, req.session.user, {
       title: "Edit format report", action: "/reports/" + row.report_id, submitText: "Save changes", values: row
-    }));
+    });
   });
 });
 
 // ---- Reports: update ----
 app.post("/reports/:id", requireLogin, function (req, res) {
   withOwnedReport(req, res, function (row) {
+    const page = { title: "Edit format report", action: "/reports/" + row.report_id, submitText: "Save changes" };
     const result = readReportForm(req.body);
-    const action = "/reports/" + row.report_id;
     if (result.error) {
-      return res.status(400).send(views.reportFormPage(req.session.user, {
-        title: "Edit format report", action, submitText: "Save changes", values: result.values, error: result.error
-      }));
+      return sendForm(res, views.reportFormPage, req.session.user, { ...page, values: result.values, error: result.error }, 400);
     }
 
     const v = result.values;
-    // "and user_id = ?" repeats the ownership check inside the query itself
-    const sql = `update format_reports set theater_name = ?, screen_name = ?, projection_type = ?,
-                        picture_rating = ?, sound_rating = ?, comment = ?
-                 where report_id = ? and user_id = ?`;
-    const params = [v.theater_name, v.screen_name, v.projection_type, Number(v.picture_rating), Number(v.sound_rating),
-                    v.comment === "" ? null : v.comment, row.report_id, req.session.user.user_id];
-    conn.query(sql, params, function (err) {
-      if (err) {
-        console.log("Error updating report", err);
-        return res.status(500).send(views.reportFormPage(req.session.user, {
-          title: "Edit format report", action, submitText: "Save changes", values: v, error: "Something went wrong. Please try again."
-        }));
-      }
-      res.redirect("/reports?updated=1");
+    resolveTheater(req.body, req.session.user.user_id, function (theaterError, theaterId) {
+      if (theaterError) return sendForm(res, views.reportFormPage, req.session.user, { ...page, values: v, error: theaterError }, 400);
+
+      // "and user_id = ?" repeats the ownership check inside the query itself
+      const sql = `update format_reports set theater_id = ?, screen_name = ?, projection_type = ?,
+                          picture_rating = ?, sound_rating = ?, comment = ?
+                   where report_id = ? and user_id = ?`;
+      const params = [theaterId, v.screen_name, v.projection_type, Number(v.picture_rating), Number(v.sound_rating),
+                      v.comment === "" ? null : v.comment, row.report_id, req.session.user.user_id];
+      conn.query(sql, params, function (err) {
+        if (err) {
+          console.log("Error updating report", err);
+          return sendForm(res, views.reportFormPage, req.session.user, { ...page, values: v, error: "Something went wrong. Please try again." }, 500);
+        }
+        res.redirect("/reports?updated=1");
+      });
     });
   });
 });
