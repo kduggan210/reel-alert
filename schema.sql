@@ -107,3 +107,18 @@ CREATE TABLE IF NOT EXISTS format_reports (
   CONSTRAINT chk_reports_picture CHECK (picture_rating BETWEEN 1 AND 5),
   CONSTRAINT chk_reports_sound   CHECK (sound_rating   BETWEEN 1 AND 5)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---- rerelease_candidates ----
+-- A cache of older films returning to US theaters, filled by the "re-release radar" job (rereleases.js) from TMDB.
+-- Nobody edits these rows; the job replaces them once a day. Safe to run on an existing database (nothing is dropped).
+CREATE TABLE IF NOT EXISTS rerelease_candidates (
+  tmdb_id        INT NOT NULL,
+  title          VARCHAR(200) NOT NULL,
+  original_date  DATE NOT NULL,
+  rerelease_date DATE NOT NULL,
+  note           VARCHAR(200) NULL,
+  poster_path    VARCHAR(100) NULL,
+  fetched_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (tmdb_id),
+  KEY idx_rerelease_date (rerelease_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

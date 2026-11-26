@@ -43,6 +43,7 @@ const NAV_LOGGED_OUT = [
 const NAV_LOGGED_IN = [
   { key: "home", href: "/", text: "Home" },
   { key: "screenings", href: "/screenings", text: "Screenings" },
+  { key: "rereleases", href: "/rereleases", text: "Re-releases" },
   { key: "reports", href: "/reports", text: "Format Reports" },
   { key: "profile", href: "/profile", text: "Profile" },
   { key: "about", href: "/about", text: "About" }
@@ -168,6 +169,10 @@ function aboutPage(user) {
         <section>
             <h2>Contact</h2>
             <p><a href="https://github.com/kduggan210">GitHub</a></p>
+        </section>
+        <section>
+            <h2>Credits</h2>
+            <p>Re-release information on the Re-releases page comes from <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">TMDB</a>. This product uses the TMDB API but is not endorsed or certified by TMDB. Theater locations use data from the U.S. Census Bureau and Zippopotam.us.</p>
         </section>`;
   return layout({ title: "About", user, active: "about", body });
 }
@@ -523,6 +528,53 @@ ${theaterPicker(o.theaters, v)}
   return layout({ title: o.title, user, active: "reports", body });
 }
 
+// ---------- Re-release radar ----------
+
+// Older films returning to US theaters. options: { rows, zip, configured, updated }
+// This is a heads-up, not a showtime list: it says a re-release is coming, and each row links to
+// "Find showtimes" (a web search) and "Add a screening" (the add form, pre-filled with the film and date).
+function rereleasesPage(user, options) {
+  const o = options || {};
+  const rows = o.rows || [];
+
+  const list = rows.length === 0
+    ? `<p>${o.configured
+        ? "No re-releases found yet. The list refreshes about once a day, so check back soon."
+        : "The re-release radar isn't set up yet. The site's owner needs to add a TMDB token to turn it on."}</p>`
+    : `<ul class="rr-list">
+${rows.map(function (r) {
+  const title = String(r.title);
+  const year = String(r.original_date).slice(0, 4);
+  const addUrl = "/screenings/new?movie=" + encodeURIComponent(title) + "&date=" + encodeURIComponent(String(r.rerelease_date).slice(0, 10));
+  const searchUrl = "https://www.google.com/search?q=" + encodeURIComponent((title + " " + year + " showtimes " + (o.zip || "")).trim());
+  const poster = r.poster_path
+    ? `<img class="rr-poster" src="https://image.tmdb.org/t/p/w185${escapeHtml(r.poster_path)}" alt="Poster for ${escapeHtml(title)}" width="92" height="138" loading="lazy">`
+    : `<div class="rr-poster rr-none" aria-hidden="true"></div>`;
+  return `            <li class="rr-item">
+                ${poster}
+                <div class="rr-body">
+                    <h2>${escapeHtml(title)} <span class="rr-year">(${escapeHtml(year)})</span></h2>
+                    <p class="rr-when">Returns ${escapeHtml(formatDate(r.rerelease_date))}</p>
+                    ${r.note ? `<p class="note">${escapeHtml(r.note)}</p>` : ""}
+                    <div class="row-actions">
+                        <a class="btn btn-small" href="${escapeHtml(addUrl)}">Add a screening</a>
+                        <a class="btn btn-quiet btn-small" href="${escapeHtml(searchUrl)}" target="_blank" rel="noopener noreferrer">Find showtimes</a>
+                    </div>
+                </div>
+            </li>`;
+}).join("\n")}
+        </ul>`;
+
+  const body = `        <div class="page-head">
+            <h1>Re-Release Radar</h1>
+        </div>
+        <p class="sub">Older films returning to US theaters in the next three months. Find a showing near you, then add it to the Screenings list.</p>
+        ${o.updated ? `<p class="sub count">Last updated ${escapeHtml(formatDate(String(o.updated).slice(0, 10)))}.</p>` : ""}
+        ${list}
+        <p class="credit">This product uses the TMDB API but is not endorsed or certified by TMDB. <a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">themoviedb.org</a></p>`;
+  return layout({ title: "Re-Release Radar", user, active: "rereleases", body });
+}
+
 // ---------- Profile ----------
 
 // Profile page: four separate forms (account, location, password, delete account).
@@ -630,4 +682,4 @@ function notFoundPage(user) {
   return layout({ title: "Not found", user, active: "", body });
 }
 
-module.exports = { FORMATS, EVENT_TYPES, escapeHtml, layout, homePage, aboutPage, loginPage, registerPage, screeningsPage, screeningFormPage, reportsPage, reportFormPage, profilePage, forbiddenPage, comingSoonPage, notFoundPage };
+module.exports = { FORMATS, EVENT_TYPES, escapeHtml, layout, homePage, aboutPage, loginPage, registerPage, screeningsPage, screeningFormPage, reportsPage, reportFormPage, rereleasesPage, profilePage, forbiddenPage, comingSoonPage, notFoundPage };

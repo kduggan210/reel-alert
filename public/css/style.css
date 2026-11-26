@@ -284,3 +284,15 @@ form.filters .within input[type="number"] { width: 4.5rem; padding: 0.25rem 0.4r
 form.filters .filter-actions { display: flex; gap: 0.5rem; }
 p.count { margin: 0 0 0.75rem; font-size: 0.9rem; }
 @media (max-width: 600px) { form.filters .field, form.filters select { width: 100%; } }
+
+/* ---- Re-release radar ---- */
+ul.rr-list { list-style: none; margin: 0 0 1.5rem; padding: 0; display: grid; gap: 1rem; }
+.rr-item { display: flex; gap: 1rem; padding: 1rem; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; }
+.rr-poster { flex: none; width: 92px; height: 138px; object-fit: cover; border-radius: 4px; background: var(--rule); }
+.rr-none { display: block; }
+.rr-body { min-width: 0; }
+.rr-body h2 { margin: 0 0 0.25rem; font-size: 1.25rem; }
+.rr-year { color: var(--muted); font-weight: 400; font-size: 1rem; }
+.rr-when { margin: 0 0 0.5rem; font-weight: 600; }
+.rr-body .note { color: var(--muted); font-size: 0.9rem; margin: 0 0 0.5rem; }
+p.credit { color: var(--muted); font-size: 0.85rem; margin-top: 1.5rem; }
